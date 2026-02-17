@@ -104,7 +104,7 @@ def determine_version(current_version, commits):
                  parts = clean_sub.split(":", 1)
                  if len(parts) == 2:
                      c_prefix = parts[0].strip()
-                     if c_prefix in ["doc", "ci"]:
+                     if c_prefix in ["docs", "doc", "ci"]:
                          continue # Skip
                      if c_prefix in ["chore", "fix"]:
                          ctype = c_prefix
@@ -120,7 +120,7 @@ def determine_version(current_version, commits):
                      ctype = "misc"
                      description = clean_sub
 
-        if ctype in ["doc", "ci"]:
+        if ctype in ["docs", "doc", "ci"]:
             continue
 
         should_release = True
