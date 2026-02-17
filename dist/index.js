@@ -81,6 +81,9 @@
     return GenIcon({"tag":"svg","attr":{"viewBox":"0 0 24 24"},"child":[{"tag":"path","attr":{"fill":"none","d":"M0 0h24v24H0V0z"}},{"tag":"path","attr":{"d":"M14 12v2.5l5.5 5.5H22zm0 8h3l-3-3zM8 4l-6 6h2v10h8V10h2L8 4zm1 10H7v-4h2v4z"}}]})(props);
   }
 
+  // ---- Display helpers ----
+  /** Replace underscores with spaces and strip any trailing " [ShaderName]" bracket from labels */
+  const formatDisplayName = (name) => name.replace(/\.fx$/i, "").replace(/_/g, " ").replace(/\s*\[.*?\]\s*$/, "").trim();
   // Global refresh function reference
   let forceRefreshContent = null;
   const Content = ({ serverAPI }) => {
@@ -102,7 +105,7 @@
           let options = [];
           options.push(baseShaderOrSS);
           for (let i = 0; i < le_list.length; i++) {
-              let option = { data: le_list[i], label: le_list[i] };
+              let option = { data: le_list[i], label: formatDisplayName(le_list[i]) };
               options.push(option);
           }
           return options;
@@ -135,7 +138,7 @@
           let isEnabled = enabledResp.result === true || enabledResp.result === "true";
           setShadersEnabled(isEnabled);
           let curr = await serverAPI.callPluginMethod("get_current_shader", {});
-          setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : curr.result) });
+          setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : formatDisplayName(curr.result)) });
           let eff = await serverAPI.callPluginMethod("get_current_effect", {});
           setCurrentEffect(eff.result.effect || "");
           // Fetch params for current shader
@@ -169,7 +172,7 @@
           const isDisabled = !shadersEnabled || selectedShader.data === "None";
           if (p.type === "bool") {
               return (window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, { key: p.name },
-                  window.SP_REACT.createElement(deckyFrontendLib.ToggleField, { label: p.ui_label || p.name, checked: p.value, disabled: isDisabled, onChange: (checked) => {
+                  window.SP_REACT.createElement(deckyFrontendLib.ToggleField, { label: formatDisplayName(p.ui_label || p.name), checked: p.value, disabled: isDisabled, onChange: (checked) => {
                           handleParamChange(p.name, checked);
                       } })));
           }
@@ -182,7 +185,7 @@
               const numSteps = Math.round((uiMax - uiMin) / uiStep);
               const currentTick = Math.round((p.value - uiMin) / uiStep);
               return (window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, { key: p.name },
-                  window.SP_REACT.createElement(deckyFrontendLib.SliderField, { bottomSeparator: "none", label: `${p.ui_label || p.name}: ${p.value.toFixed(2)}`, min: 0, max: numSteps, step: 1, value: currentTick, disabled: isDisabled, onChange: (tick) => {
+                  window.SP_REACT.createElement(deckyFrontendLib.SliderField, { bottomSeparator: "none", label: `${formatDisplayName(p.ui_label || p.name)}: ${p.value.toFixed(2)}`, min: 0, max: numSteps, step: 1, value: currentTick, disabled: isDisabled, onChange: (tick) => {
                           const real = uiMin + tick * uiStep;
                           // Clamp to avoid float drift
                           const clamped = Math.min(uiMax, Math.max(uiMin, parseFloat(real.toFixed(6))));

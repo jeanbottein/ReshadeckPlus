@@ -33,6 +33,11 @@ interface ShaderParam {
     ui_label?: string;
 }
 
+// ---- Display helpers ----
+/** Replace underscores with spaces and strip any trailing " [ShaderName]" bracket from labels */
+const formatDisplayName = (name: string): string =>
+    name.replace(/\.fx$/i, "").replace(/_/g, " ").replace(/\s*\[.*?\]\s*$/, "").trim();
+
 // Global refresh function reference
 let forceRefreshContent: (() => void) | null = null;
 
@@ -74,7 +79,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         let options: DropdownOption[] = [];
         options.push(baseShaderOrSS);
         for (let i = 0; i < le_list.length; i++) {
-            let option = { data: le_list[i], label: le_list[i] } as SingleDropdownOption;
+            let option = { data: le_list[i], label: formatDisplayName(le_list[i]) } as SingleDropdownOption;
             options.push(option);
         }
         return options;
@@ -113,7 +118,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         setShadersEnabled(isEnabled);
 
         let curr = await serverAPI.callPluginMethod("get_current_shader", {});
-        setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : curr.result) } as SingleDropdownOption);
+        setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : formatDisplayName(curr.result as string)) } as SingleDropdownOption);
 
         let eff = await serverAPI.callPluginMethod("get_current_effect", {});
         setCurrentEffect((eff.result as { effect: string }).effect || "");
@@ -158,7 +163,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
             return (
                 <PanelSectionRow key={p.name}>
                     <ToggleField
-                        label={p.ui_label || p.name}
+                        label={formatDisplayName(p.ui_label || p.name)}
                         checked={p.value as boolean}
                         disabled={isDisabled}
                         onChange={(checked: boolean) => {
@@ -183,7 +188,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 <PanelSectionRow key={p.name}>
                     <SliderField
                         bottomSeparator="none"
-                        label={`${p.ui_label || p.name}: ${(p.value as number).toFixed(2)}`}
+                        label={`${formatDisplayName(p.ui_label || p.name)}: ${(p.value as number).toFixed(2)}`}
                         min={0}
                         max={numSteps}
                         step={1}
