@@ -1,4 +1,4 @@
-# Reshadeck
+# Reshadeck+
 
 This is a fork of a fork based on the work of [mspeedo/Reshadeck](https://github.com/mspeedo/Reshadeck) and originally [safijari/Reshadeck](https://github.com/safijari/Reshadeck).
 

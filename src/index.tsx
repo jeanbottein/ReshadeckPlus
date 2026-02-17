@@ -321,7 +321,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     }, 5000);
 
     return {
-        title: <div className={staticClasses.Title}>Reshadeck</div>,
+        title: <div className={staticClasses.Title}>Reshadeck+</div>,
         content: <Content serverAPI={serverApi} />,
         icon: <MdWbShade />,
         onDismount() {

@@ -1,11 +1,9 @@
 #!/bin/bash
 
-# Configuration
-PLUGIN_NAME="Reshadeck"
 # Ensure we are in the project root first
 cd "$(dirname "$0")"
 
-# Configuration
+# Configuration — PLUGIN_NAME matches the install directory (must stay "Reshadeck")
 PLUGIN_NAME="Reshadeck"
 # Read version from package.json using node or jq. 
 # Using node as it's guaranteed to be present for a node project.
