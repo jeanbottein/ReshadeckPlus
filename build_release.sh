@@ -62,6 +62,7 @@ rsync -av \
     --exclude='Makefile' \
     --exclude='*.zip' \
     --exclude='build_release.sh' \
+    --exclude='deploy.sh' \
     --exclude='dist/*.map' \
     . "$STAGING_DIR"
 

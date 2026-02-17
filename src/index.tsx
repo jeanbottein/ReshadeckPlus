@@ -1,15 +1,11 @@
 import {
     ButtonItem,
     definePlugin,
-    DialogButton,
-    Menu,
-    MenuItem,
     PanelSection,
     PanelSectionRow,
     ToggleField,
     Router,
     ServerAPI,
-    showContextMenu,
     staticClasses,
     Dropdown,
     DropdownOption,
@@ -18,7 +14,12 @@ import {
 } from "decky-frontend-lib";
 import { VFC, useState, useEffect, useRef } from "react";
 import { RiTvLine } from "react-icons/ri";
-import logo from "../assets/logo.png";
+
+declare global {
+    interface Window {
+        SteamClient: any;
+    }
+}
 
 // ---- Types ----
 interface ShaderParam {
@@ -39,52 +40,22 @@ interface ShaderParam {
 const formatDisplayName = (name: string): string =>
     name.replace(/\.fx$/i, "").replace(/_/g, " ").replace(/\s*\[.*?\]\s*$/, "").trim();
 
-// Global refresh function reference
-let forceRefreshContent: (() => void) | null = null;
-
-class ReshadeckLogic {
-    serverAPI: ServerAPI;
-    dataTakenAt: number = Date.now();
-
-    constructor(serverAPI: ServerAPI) {
-        this.serverAPI = serverAPI;
-    }
-
-    handleSuspend = async () => {
-        // Do nothing or log if you want
-    };
-
-    handleResume = async () => {
-        //		await this.serverAPI.callPluginMethod("apply_shader", {});
-    };
-}
-
 const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const baseShader = { data: "None", label: "No Shader" } as SingleDropdownOption;
     const [shadersEnabled, setShadersEnabled] = useState<boolean>(false);
-    const [shader_list, set_shader_list] = useState<string[]>([]);
     const [selectedShader, setSelectedShader] = useState<DropdownOption>(baseShader);
     const [shaderOptions, setShaderOptions] = useState<DropdownOption[]>([baseShader]);
-    const [currentGameId, setCurrentGameId] = useState<string>("Unknown");
     const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
-    const [currentEffect, setCurrentEffect] = useState<string>("");
     const [shaderParams, setShaderParams] = useState<ShaderParam[]>([]);
     const paramTimeouts = useRef<{ [key: string]: number }>({});
     const [applyDisabled, setApplyDisabled] = useState(false);
+    const [perGame, setPerGame] = useState<boolean>(false);
+    const [currentAppId, setCurrentAppId] = useState<string>("Unknown");
 
-    // --- Add refreshVersion state for UI refreshes ---
-    const [refreshVersion, setRefreshVersion] = useState(0);
-    forceRefreshContent = () => setRefreshVersion(v => v + 1);
-
-    const getShaderOptions = (le_list: string[], baseShaderOrSS: any) => {
-        let options: DropdownOption[] = [];
-        options.push(baseShaderOrSS);
-        for (let i = 0; i < le_list.length; i++) {
-            let option = { data: le_list[i], label: formatDisplayName(le_list[i]) } as SingleDropdownOption;
-            options.push(option);
-        }
-        return options;
-    }
+    const getShaderOptions = (shaderList: string[]): DropdownOption[] => [
+        baseShader,
+        ...shaderList.map(s => ({ data: s, label: formatDisplayName(s) } as SingleDropdownOption))
+    ];
 
     const fetchShaderParams = async () => {
         const resp = await serverAPI.callPluginMethod("get_shader_params", {});
@@ -95,49 +66,59 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         }
     };
 
-    const refreshCurrentGameInfo = async () => {
+    const initState = async () => {
+        // 1. Send active app info to backend
         const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
         const appname = `${Router.MainRunningApp?.display_name || "Unknown"}`;
-        setCurrentGameId(appid);
-        setCurrentGameName(appname);
+        await serverAPI.callPluginMethod("set_current_game_info", { appid, appname });
 
-        await serverAPI.callPluginMethod("set_current_game_info", {
-            appid,
-            appname
-        });
-    };
+        // 2. Refresh info from backend (gets resolved ID like 'steamos' and per-game status)
+        const info = (await serverAPI.callPluginMethod("get_game_info", {})).result as any;
+        setCurrentAppId(info.appid);
+        setCurrentGameName(info.appname);
+        setPerGame(info.per_game);
 
-    const initState = async () => {
-        await refreshCurrentGameInfo();
+        // 3. Get shader list
+        const shaderList = (await serverAPI.callPluginMethod("get_shader_list", {})).result as string[];
+        setShaderOptions(getShaderOptions(shaderList));
 
-        let shader_list = (await serverAPI.callPluginMethod("get_shader_list", {})).result as string[];
-        set_shader_list(shader_list)
-        setShaderOptions(getShaderOptions(shader_list, baseShader));
-
+        // 4. Get enabled status
         let enabledResp = await serverAPI.callPluginMethod("get_shader_enabled", {});
         let isEnabled: boolean = enabledResp.result === true || enabledResp.result === "true";
         setShadersEnabled(isEnabled);
 
+        // 5. Get current shader
         let curr = await serverAPI.callPluginMethod("get_current_shader", {});
-        setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : formatDisplayName(curr.result as string)) } as SingleDropdownOption);
+        setSelectedShader({
+            data: curr.result,
+            label: (curr.result == "None" || curr.result == "0" ? "None" : formatDisplayName(curr.result as string))
+        } as SingleDropdownOption);
 
-        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-        setCurrentEffect((eff.result as { effect: string }).effect || "");
-
-        // Fetch params for current shader
+        // 6. Fetch params
         await fetchShaderParams();
     }
 
-    // --- Init state on mount and on refreshVersion bump ---
+    // --- Init state on mount ---
     useEffect(() => {
         initState();
-    }, [refreshVersion]);
+    }, []);
+
+    // --- Poll for game changes and re-init state ---
+    useEffect(() => {
+        let lastAppId = `${Router.MainRunningApp?.appid || "Unknown"}`;
+        const interval = setInterval(async () => {
+            const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
+            if (appid !== lastAppId) {
+                lastAppId = appid;
+                await initState();
+            }
+        }, 5000);
+        return () => clearInterval(interval);
+    }, []);
 
     // --- Helper to auto-apply the shader (forces gamescope reload) ---
     const applyShader = async () => {
         await serverAPI.callPluginMethod("apply_shader", {});
-        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-        setCurrentEffect((eff.result as { effect: string }).effect || "");
     };
 
     // --- Helper to debounce parameter changes with auto-apply ---
@@ -240,12 +221,36 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
     return (
         <div>
-            <PanelSection title="Game">
+
+            <PanelSection title="Profile">
                 <PanelSectionRow>
-                    <div>
-                        <div><b>Current Game:</b> {currentGameName}</div>
-                    </div>
+                    <ToggleField
+                        label="Per-Game Profile"
+                        checked={perGame}
+                        onChange={async (checked: boolean) => {
+                            setPerGame(checked);
+                            await serverAPI.callPluginMethod("set_per_game", { enabled: checked });
+                            // Reload info to sync with the switch between global/per-game
+                            await initState();
+                        }}
+                    />
                 </PanelSectionRow>
+
+                {perGame && (
+                    <PanelSectionRow>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "8px" }}>
+                            {currentAppId !== "steamos" && currentAppId !== "Unknown" && (
+                                <img
+                                    src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${currentAppId}/header.jpg`}
+                                    alt={currentGameName}
+                                    style={{ width: "95%", borderRadius: "4px" }}
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                            )}
+                            <div style={{ fontWeight: "bold" }}>{currentGameName}</div>
+                        </div>
+                    </PanelSectionRow>
+                )}
             </PanelSection>
 
             <PanelSection title="Shader">
@@ -256,13 +261,9 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         onChange={async (enabled: boolean) => {
                             setShadersEnabled(enabled);
                             await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
-                            if (enabled) {
-                                await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
-                            } else {
-                                await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
-                            }
-                            let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                            setCurrentEffect((eff.result as { effect: string }).effect || "");
+                            await serverAPI.callPluginMethod("toggle_shader", {
+                                shader_name: enabled ? selectedShader.data : "None"
+                            });
                         }}
                     />
                 </PanelSectionRow>
@@ -274,10 +275,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         selectedOption={selectedShader}
                         onChange={async (newSelectedShader: DropdownOption) => {
                             setSelectedShader(newSelectedShader);
-                            await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
-                            let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                            setCurrentEffect((eff.result as { effect: string }).effect || "");
-                            // Fetch updated params for new shader
+                            await serverAPI.callPluginMethod("set_shader", { shader_name: newSelectedShader.data });
                             await fetchShaderParams();
                         }}
                     />
@@ -326,38 +324,58 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 };
 
 export default definePlugin((serverApi: ServerAPI) => {
-    let logic = new ReshadeckLogic(serverApi);
-    //	let suspend_registers = [
-    //		window.SteamClient.System.RegisterForOnSuspendRequest(logic.handleSuspend),
-    //		window.SteamClient.System.RegisterForOnResumeFromSuspend(logic.handleResume),
-    //	];
+    let unregisterMonitor: (() => void) | undefined;
 
-    let lastAppId = `${Router.MainRunningApp?.appid || "Unknown"}`;
-    const interval = setInterval(async () => {
-        const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
-        const appname = `${Router.MainRunningApp?.display_name || "Unknown"}`;
-
-        if (appid !== lastAppId) {
-            lastAppId = appid;
-            await serverApi.callPluginMethod("set_current_game_info", {
-                appid,
-                appname,
-            });
-            // --- Notify UI to refresh if overlay is open ---
-            if (forceRefreshContent) forceRefreshContent();
+    const checkGame = async () => {
+        try {
+            const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
+            const appname = `${Router.MainRunningApp?.display_name || "Unknown"}`;
+            await serverApi.callPluginMethod("set_current_game_info", { appid, appname });
+        } catch (e) {
+            console.error("Reshadeck checkGame error", e);
         }
-    }, 5000);
+    };
+
+    // Use SteamClient events to detect game launch/close in the background
+    if (window.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications) {
+        const sub = window.SteamClient.GameSessions.RegisterForAppLifetimeNotifications((update: any) => {
+            // Detect game launch -> trigger shader application immediately
+            if (update.bCreated) {
+                const appid = update.unAppID.toString();
+                let appname = "Loading...";
+                // Best effort to get name if Router is already updated
+                if (Router.MainRunningApp && String(Router.MainRunningApp.appid) === appid) {
+                    appname = Router.MainRunningApp.display_name;
+                }
+                serverApi.callPluginMethod("set_current_game_info", { appid, appname });
+            }
+
+            // Wait slightly for Router to update its state (for game close or accurate name)
+            // 250ms: fast check for quick transitions
+            // 500ms: standard check
+            // 1500ms: backup check
+            setTimeout(checkGame, 250);
+            setTimeout(checkGame, 500);
+            setTimeout(checkGame, 1500);
+        });
+        unregisterMonitor = () => {
+            if (sub?.unregister) sub.unregister();
+        };
+    } else {
+        // Fallback polling if SteamClient/Events are missing
+        const i = setInterval(checkGame, 2000);
+        unregisterMonitor = () => clearInterval(i);
+    }
+
+    // Initial check
+    checkGame();
 
     return {
         title: <div className={staticClasses.Title}>Reshadeck+</div>,
         content: <Content serverAPI={serverApi} />,
         icon: <RiTvLine />,
         onDismount() {
-            //    suspend_registers[0].unregister();
-            //    suspend_registers[1].unregister();
-
-            clearInterval(interval);
+            if (unregisterMonitor) unregisterMonitor();
         },
-        alwaysRender: true
     };
 });

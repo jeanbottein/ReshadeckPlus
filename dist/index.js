@@ -84,32 +84,21 @@
   // ---- Display helpers ----
   /** Replace underscores with spaces and strip any trailing " [ShaderName]" bracket from labels */
   const formatDisplayName = (name) => name.replace(/\.fx$/i, "").replace(/_/g, " ").replace(/\s*\[.*?\]\s*$/, "").trim();
-  // Global refresh function reference
-  let forceRefreshContent = null;
   const Content = ({ serverAPI }) => {
       const baseShader = { data: "None", label: "No Shader" };
       const [shadersEnabled, setShadersEnabled] = React.useState(false);
-      const [shader_list, set_shader_list] = React.useState([]);
       const [selectedShader, setSelectedShader] = React.useState(baseShader);
       const [shaderOptions, setShaderOptions] = React.useState([baseShader]);
-      const [currentGameId, setCurrentGameId] = React.useState("Unknown");
       const [currentGameName, setCurrentGameName] = React.useState("Unknown");
-      const [currentEffect, setCurrentEffect] = React.useState("");
       const [shaderParams, setShaderParams] = React.useState([]);
       const paramTimeouts = React.useRef({});
       const [applyDisabled, setApplyDisabled] = React.useState(false);
-      // --- Add refreshVersion state for UI refreshes ---
-      const [refreshVersion, setRefreshVersion] = React.useState(0);
-      forceRefreshContent = () => setRefreshVersion(v => v + 1);
-      const getShaderOptions = (le_list, baseShaderOrSS) => {
-          let options = [];
-          options.push(baseShaderOrSS);
-          for (let i = 0; i < le_list.length; i++) {
-              let option = { data: le_list[i], label: formatDisplayName(le_list[i]) };
-              options.push(option);
-          }
-          return options;
-      };
+      const [perGame, setPerGame] = React.useState(false);
+      const [currentAppId, setCurrentAppId] = React.useState("Unknown");
+      const getShaderOptions = (shaderList) => [
+          baseShader,
+          ...shaderList.map(s => ({ data: s, label: formatDisplayName(s) }))
+      ];
       const fetchShaderParams = async () => {
           const resp = await serverAPI.callPluginMethod("get_shader_params", {});
           if (resp.result && Array.isArray(resp.result)) {
@@ -119,40 +108,51 @@
               setShaderParams([]);
           }
       };
-      const refreshCurrentGameInfo = async () => {
+      const initState = async () => {
+          // 1. Send active app info to backend
           const appid = `${deckyFrontendLib.Router.MainRunningApp?.appid || "Unknown"}`;
           const appname = `${deckyFrontendLib.Router.MainRunningApp?.display_name || "Unknown"}`;
-          setCurrentGameId(appid);
-          setCurrentGameName(appname);
-          await serverAPI.callPluginMethod("set_current_game_info", {
-              appid,
-              appname
-          });
-      };
-      const initState = async () => {
-          await refreshCurrentGameInfo();
-          let shader_list = (await serverAPI.callPluginMethod("get_shader_list", {})).result;
-          set_shader_list(shader_list);
-          setShaderOptions(getShaderOptions(shader_list, baseShader));
+          await serverAPI.callPluginMethod("set_current_game_info", { appid, appname });
+          // 2. Refresh info from backend (gets resolved ID like 'steamos' and per-game status)
+          const info = (await serverAPI.callPluginMethod("get_game_info", {})).result;
+          setCurrentAppId(info.appid);
+          setCurrentGameName(info.appname);
+          setPerGame(info.per_game);
+          // 3. Get shader list
+          const shaderList = (await serverAPI.callPluginMethod("get_shader_list", {})).result;
+          setShaderOptions(getShaderOptions(shaderList));
+          // 4. Get enabled status
           let enabledResp = await serverAPI.callPluginMethod("get_shader_enabled", {});
           let isEnabled = enabledResp.result === true || enabledResp.result === "true";
           setShadersEnabled(isEnabled);
+          // 5. Get current shader
           let curr = await serverAPI.callPluginMethod("get_current_shader", {});
-          setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : formatDisplayName(curr.result)) });
-          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-          setCurrentEffect(eff.result.effect || "");
-          // Fetch params for current shader
+          setSelectedShader({
+              data: curr.result,
+              label: (curr.result == "None" || curr.result == "0" ? "None" : formatDisplayName(curr.result))
+          });
+          // 6. Fetch params
           await fetchShaderParams();
       };
-      // --- Init state on mount and on refreshVersion bump ---
+      // --- Init state on mount ---
       React.useEffect(() => {
           initState();
-      }, [refreshVersion]);
+      }, []);
+      // --- Poll for game changes and re-init state ---
+      React.useEffect(() => {
+          let lastAppId = `${deckyFrontendLib.Router.MainRunningApp?.appid || "Unknown"}`;
+          const interval = setInterval(async () => {
+              const appid = `${deckyFrontendLib.Router.MainRunningApp?.appid || "Unknown"}`;
+              if (appid !== lastAppId) {
+                  lastAppId = appid;
+                  await initState();
+              }
+          }, 5000);
+          return () => clearInterval(interval);
+      }, []);
       // --- Helper to auto-apply the shader (forces gamescope reload) ---
       const applyShader = async () => {
           await serverAPI.callPluginMethod("apply_shader", {});
-          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-          setCurrentEffect(eff.result.effect || "");
       };
       // --- Helper to debounce parameter changes with auto-apply ---
       const handleParamChange = (paramName, value) => {
@@ -209,34 +209,34 @@
       };
       const hasParams = shaderParams.length > 0;
       return (window.SP_REACT.createElement("div", null,
+          window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Notice" },
+              window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement("div", { style: { fontSize: "12px" } }, "Shader application is not automatic in the background. You must reopen the plugin to apply the settings profile."))),
           window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Game" },
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-                  window.SP_REACT.createElement("div", null,
-                      window.SP_REACT.createElement("div", null,
-                          window.SP_REACT.createElement("b", null, "Current Game:"),
-                          " ",
-                          currentGameName)))),
+                  window.SP_REACT.createElement(deckyFrontendLib.ToggleField, { label: "Per-Game Profile", checked: perGame, onChange: async (checked) => {
+                          setPerGame(checked);
+                          await serverAPI.callPluginMethod("set_per_game", { enabled: checked });
+                          // Reload info to sync with the switch between global/per-game
+                          await initState();
+                      } })),
+              perGame && (window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "8px" } },
+                      currentAppId !== "steamos" && currentAppId !== "Unknown" && (window.SP_REACT.createElement("img", { src: `https://cdn.cloudflare.steamstatic.com/steam/apps/${currentAppId}/header.jpg`, alt: currentGameName, style: { width: "95%", borderRadius: "4px" }, onError: (e) => { e.currentTarget.style.display = 'none'; } })),
+                      window.SP_REACT.createElement("div", { style: { fontWeight: "bold" } }, currentGameName))))),
           window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Shader" },
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
                   window.SP_REACT.createElement(deckyFrontendLib.ToggleField, { label: "Enable Shaders", checked: shadersEnabled, onChange: async (enabled) => {
                           setShadersEnabled(enabled);
                           await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
-                          if (enabled) {
-                              await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
-                          }
-                          else {
-                              await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
-                          }
-                          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                          setCurrentEffect(eff.result.effect || "");
+                          await serverAPI.callPluginMethod("toggle_shader", {
+                              shader_name: enabled ? selectedShader.data : "None"
+                          });
                       } })),
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
                   window.SP_REACT.createElement(deckyFrontendLib.Dropdown, { menuLabel: "Select shader", strDefaultLabel: selectedShader.label, rgOptions: shaderOptions, selectedOption: selectedShader, onChange: async (newSelectedShader) => {
                           setSelectedShader(newSelectedShader);
-                          await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
-                          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                          setCurrentEffect(eff.result.effect || "");
-                          // Fetch updated params for new shader
+                          await serverAPI.callPluginMethod("set_shader", { shader_name: newSelectedShader.data });
                           await fetchShaderParams();
                       } }))),
           hasParams && (window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Parameters" },
@@ -265,35 +265,58 @@
                   window.SP_REACT.createElement("div", null, "WARNING: Shaders can lead to dropped frames and possibly even severe performance problems.")))));
   };
   var index = deckyFrontendLib.definePlugin((serverApi) => {
-      //	let suspend_registers = [
-      //		window.SteamClient.System.RegisterForOnSuspendRequest(logic.handleSuspend),
-      //		window.SteamClient.System.RegisterForOnResumeFromSuspend(logic.handleResume),
-      //	];
-      let lastAppId = `${deckyFrontendLib.Router.MainRunningApp?.appid || "Unknown"}`;
-      const interval = setInterval(async () => {
-          const appid = `${deckyFrontendLib.Router.MainRunningApp?.appid || "Unknown"}`;
-          const appname = `${deckyFrontendLib.Router.MainRunningApp?.display_name || "Unknown"}`;
-          if (appid !== lastAppId) {
-              lastAppId = appid;
-              await serverApi.callPluginMethod("set_current_game_info", {
-                  appid,
-                  appname,
-              });
-              // --- Notify UI to refresh if overlay is open ---
-              if (forceRefreshContent)
-                  forceRefreshContent();
+      let unregisterMonitor;
+      const checkGame = async () => {
+          try {
+              const appid = `${deckyFrontendLib.Router.MainRunningApp?.appid || "Unknown"}`;
+              const appname = `${deckyFrontendLib.Router.MainRunningApp?.display_name || "Unknown"}`;
+              await serverApi.callPluginMethod("set_current_game_info", { appid, appname });
           }
-      }, 5000);
+          catch (e) {
+              console.error("Reshadeck checkGame error", e);
+          }
+      };
+      // Use SteamClient events to detect game launch/close in the background
+      if (window.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications) {
+          const sub = window.SteamClient.GameSessions.RegisterForAppLifetimeNotifications((update) => {
+              // Detect game launch -> trigger shader application immediately
+              if (update.bCreated) {
+                  const appid = update.unAppID.toString();
+                  let appname = "Loading...";
+                  // Best effort to get name if Router is already updated
+                  if (deckyFrontendLib.Router.MainRunningApp && String(deckyFrontendLib.Router.MainRunningApp.appid) === appid) {
+                      appname = deckyFrontendLib.Router.MainRunningApp.display_name;
+                  }
+                  serverApi.callPluginMethod("set_current_game_info", { appid, appname });
+              }
+              // Wait slightly for Router to update its state (for game close or accurate name)
+              // 250ms: fast check for quick transitions
+              // 500ms: standard check
+              // 1500ms: backup check
+              setTimeout(checkGame, 250);
+              setTimeout(checkGame, 500);
+              setTimeout(checkGame, 1500);
+          });
+          unregisterMonitor = () => {
+              if (sub?.unregister)
+                  sub.unregister();
+          };
+      }
+      else {
+          // Fallback polling if SteamClient/Events are missing
+          const i = setInterval(checkGame, 2000);
+          unregisterMonitor = () => clearInterval(i);
+      }
+      // Initial check
+      checkGame();
       return {
           title: window.SP_REACT.createElement("div", { className: deckyFrontendLib.staticClasses.Title }, "Reshadeck+"),
           content: window.SP_REACT.createElement(Content, { serverAPI: serverApi }),
           icon: window.SP_REACT.createElement(RiTvLine, null),
           onDismount() {
-              //    suspend_registers[0].unregister();
-              //    suspend_registers[1].unregister();
-              clearInterval(interval);
+              if (unregisterMonitor)
+                  unregisterMonitor();
           },
-          alwaysRender: true
       };
   });
 

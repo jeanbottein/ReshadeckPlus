@@ -21,7 +21,7 @@ config_file = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR + "/config.json"
 
 # Annotated uniform:  uniform <type> <name> < ui_... > = <default>;
 _RE_ANNOTATED = re.compile(
-    r"uniform\s+(float|bool|int)\s+(\w+)\s*<\s*(.*?)\s*>\s*=\s*(.*?)\s*;",
+    r"uniform\s+(float|bool|int)\s+(\w+)\s*<\s*([^>]*)\s*>\s*=\s*(.*?)\s*;",
     re.DOTALL,
 )
 
@@ -52,6 +52,7 @@ class Plugin:
     _current = "None"
     _appid = "Unknown"
     _appname = "Unknown"
+    _per_game = False     # True = save settings under this appid; False = use _global
     _params = {}          # {shader_name: {param_name: value, ...}}
     _params_meta = {}     # cache: {shader_name: [param_dict, ...]}
 
@@ -330,6 +331,12 @@ class Plugin:
     # Config persistence with backward compatibility
     # ------------------------------------------------------------------
     @staticmethod
+    def _config_key():
+        """Return the config key to read/write.
+        If per_game is True use the appid, otherwise use '_global'."""
+        return Plugin._appid if Plugin._per_game else "_global"
+
+    @staticmethod
     def load_config():
         try:
             if not os.path.exists(config_file):
@@ -337,20 +344,29 @@ class Plugin:
             with open(config_file, "r") as f:
                 data = json.load(f)
 
+            # First check if this appid has a per-game entry
             app_config = data.get(Plugin._appid, {})
-            Plugin._enabled = app_config.get("enabled", False)
-            Plugin._current = app_config.get("current", "None")
-            Plugin._params = app_config.get("params", {})
+            is_per_game = app_config.get("per_game", False)
+            Plugin._per_game = is_per_game
+
+            if is_per_game:
+                config = app_config
+            else:
+                # Fall back to _global config
+                config = data.get("_global", {})
+
+            Plugin._enabled = config.get("enabled", False)
+            Plugin._current = config.get("current", "None")
+            Plugin._params = config.get("params", {})
 
             # --- Retrocompatibility: migrate old contrast/sharpness keys ---
-            if "contrast" in app_config or "sharpness" in app_config:
+            if "contrast" in config or "sharpness" in config:
                 cas_params = Plugin._params.get("CAS.fx", {})
-                if "Contrast" not in cas_params and "contrast" in app_config:
-                    cas_params["Contrast"] = app_config["contrast"]
-                if "Sharpness" not in cas_params and "sharpness" in app_config:
-                    cas_params["Sharpness"] = app_config["sharpness"]
+                if "Contrast" not in cas_params and "contrast" in config:
+                    cas_params["Contrast"] = config["contrast"]
+                if "Sharpness" not in cas_params and "sharpness" in config:
+                    cas_params["Sharpness"] = config["sharpness"]
                 Plugin._params["CAS.fx"] = cas_params
-                # Save migrated config immediately
                 Plugin.save_config()
                 logger.info("Migrated old contrast/sharpness config to new params format")
 
@@ -365,12 +381,31 @@ class Plugin:
             if os.path.exists(config_file):
                 with open(config_file, "r") as f:
                     data = json.load(f)
-            data[Plugin._appid] = {
-                "appname": Plugin._appname,
+
+            key = Plugin._config_key()
+            entry = {
+                "appname": Plugin._appname if Plugin._per_game else "Global",
                 "enabled": Plugin._enabled,
                 "current": Plugin._current,
                 "params": Plugin._params,
             }
+            if Plugin._per_game:
+                entry["per_game"] = True
+            data[key] = entry
+
+            # When per_game is True, also store a stub under the appid so
+            # we know to load per-game on next visit even if key != appid
+            if Plugin._per_game and key == Plugin._appid:
+                data[Plugin._appid]["per_game"] = True
+
+            # When per_game is OFF, ensure the appid entry records per_game=False
+            # but doesn't overwrite a per-game entry that was previously saved
+            if not Plugin._per_game:
+                if Plugin._appid not in data:
+                    data[Plugin._appid] = {}
+                data[Plugin._appid]["per_game"] = False
+                data[Plugin._appid]["appname"] = Plugin._appname
+
             with open(config_file, "w") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
@@ -398,19 +433,107 @@ class Plugin:
     async def get_current_shader(self):
         return Plugin._current
 
-    async def set_current_game_info(self, appid: str, appname: str):
-        Plugin._appid = appid
-        Plugin._appname = appname
-        decky_plugin.logger.info(f"Current game info received: AppID={appid}, Name={appname}")
+    async def get_per_game(self):
+        """Return whether per-game mode is active."""
+        return Plugin._per_game
+
+    async def set_per_game(self, enabled: bool):
+        """Toggle per-game mode. When switching ON, copy global config to
+        per-game. When switching OFF, the game will use global config."""
+        
         prevEnabled = Plugin._enabled
         prevCurrent = Plugin._current
-        Plugin.load_config()
+        prevParams = {}
+        if prevCurrent in Plugin._params:
+             prevParams = Plugin._params[prevCurrent].copy()
+
+        Plugin._per_game = enabled
+        if enabled:
+            # Clone current (Global) settings to Per-Game
+            Plugin.save_config()
+        else:
+            # Revert to Global settings (discard current Local tweaks)
+            # We must force the file to say per_game=False BEFORE calling load_config,
+            # otherwise load_config will see "per_game": true and switch us back.
+            try:
+                if os.path.exists(config_file):
+                    with open(config_file, "r") as f:
+                        data = json.load(f)
+                    
+                    if Plugin._appid not in data:
+                        data[Plugin._appid] = {}
+                    data[Plugin._appid]["per_game"] = False
+                    
+                    with open(config_file, "w") as f:
+                        json.dump(data, f, indent=4)
+
+            except Exception as e:
+                decky_plugin.logger.error(f"Failed to update per_game flag: {e}")
+
+            Plugin.load_config()
+            
+        decky_plugin.logger.info(f"Per-game mode set to {enabled} for {Plugin._appid}")
+
+        currentParams = {}
+        if Plugin._current in Plugin._params:
+             currentParams = Plugin._params[Plugin._current]
+
         if Plugin._enabled and not prevEnabled:
             await Plugin.apply_shader(self)
         elif prevEnabled and not Plugin._enabled:
             await Plugin.toggle_shader(self, "None")
-        elif Plugin._enabled and (Plugin._current != prevCurrent):
-            await Plugin.apply_shader(self, force="false")
+        elif Plugin._enabled:
+             if (Plugin._current != prevCurrent) or (currentParams != prevParams):
+                 await Plugin.apply_shader(self, force="false")
+
+    async def get_game_info(self):
+        """Return current game info for the frontend."""
+        return {
+            "appid": Plugin._appid,
+            "appname": Plugin._appname,
+            "per_game": Plugin._per_game,
+        }
+
+    async def set_current_game_info(self, appid: str, appname: str):
+        # Recognize SteamOS menu / desktop
+        if appid == "Unknown" or appid == "" or appid == "undefined":
+            appid = "steamos"
+            appname = "SteamOS"
+        
+        if appid == Plugin._appid:
+            if appname != "Loading..." and appname != "Unknown" and Plugin._appname != appname:
+                Plugin._appname = appname
+                # If per-game settings are active, we might want to save the new name to config
+                if Plugin._per_game:
+                    Plugin.save_config()
+            return
+
+        decky_plugin.logger.info(f"Current game info received: AppID={appid}, Name={appname}")
+
+        prevEnabled = Plugin._enabled
+        prevCurrent = Plugin._current
+        # Capture parameters of the active shader to detect changes
+        prevParams = {}
+        if prevCurrent in Plugin._params:
+             prevParams = Plugin._params[prevCurrent].copy()
+
+        Plugin._appid = appid
+        Plugin._appname = appname
+        
+        Plugin.load_config()
+        
+        currentParams = {}
+        if Plugin._current in Plugin._params:
+             currentParams = Plugin._params[Plugin._current]
+
+        if Plugin._enabled and not prevEnabled:
+            await Plugin.apply_shader(self)
+        elif prevEnabled and not Plugin._enabled:
+            await Plugin.toggle_shader(self, "None")
+        elif Plugin._enabled:
+            # If shader changed OR parameters changed, re-apply
+            if (Plugin._current != prevCurrent) or (currentParams != prevParams):
+                await Plugin.apply_shader(self, force="false")
 
     async def set_shader_enabled(self, isEnabled):
         Plugin._enabled = isEnabled
