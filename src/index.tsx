@@ -206,61 +206,53 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const hasParams = shaderParams.length > 0;
 
     return (
-        <PanelSection>
-            <PanelSectionRow>
-                <b>Current Running App</b>
-            </PanelSectionRow>
-            <PanelSectionRow>
-                <div>
-                    <div><b>ID:</b> {currentGameId}</div>
-                    <div><b>Name:</b> {currentGameName}</div>
-                    <div><b>Shader:</b> {currentEffect}</div>
-                </div>
-            </PanelSectionRow>
-            <PanelSectionRow>
-                <ToggleField
-                    label="Enable Shaders"
-                    checked={shadersEnabled}
-                    onChange={async (enabled: boolean) => {
-                        setShadersEnabled(enabled);
-                        await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
-                        if (enabled) {
-                            await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
-                        } else {
-                            await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
-                        }
-                        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                        setCurrentEffect((eff.result as { effect: string }).effect || "");
-                    }}
-                />
-            </PanelSectionRow>
-            <PanelSectionRow>
-                <b>Select Shader</b>
-            </PanelSectionRow>
-            <PanelSectionRow>
-                <Dropdown
-                    menuLabel="Select shader"
-                    strDefaultLabel={selectedShader.label as string}
-                    rgOptions={shaderOptions}
-                    selectedOption={selectedShader}
-                    onChange={async (newSelectedShader: DropdownOption) => {
-                        setSelectedShader(newSelectedShader);
-                        await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
-                        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                        setCurrentEffect((eff.result as { effect: string }).effect || "");
-                        // Fetch updated params for new shader
-                        await fetchShaderParams();
-                    }}
-                />
-            </PanelSectionRow>
+        <div>
+            <PanelSection title="Game">
+                <PanelSectionRow>
+                    <div>
+                        <div><b>Current Game:</b> {currentGameName}</div>
+                    </div>
+                </PanelSectionRow>
+            </PanelSection>
 
+            <PanelSection title="Shader">
+                <PanelSectionRow>
+                    <ToggleField
+                        label="Enable Shaders"
+                        checked={shadersEnabled}
+                        onChange={async (enabled: boolean) => {
+                            setShadersEnabled(enabled);
+                            await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
+                            if (enabled) {
+                                await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
+                            } else {
+                                await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
+                            }
+                            let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                            setCurrentEffect((eff.result as { effect: string }).effect || "");
+                        }}
+                    />
+                </PanelSectionRow>
+                <PanelSectionRow>
+                    <Dropdown
+                        menuLabel="Select shader"
+                        strDefaultLabel={selectedShader.label as string}
+                        rgOptions={shaderOptions}
+                        selectedOption={selectedShader}
+                        onChange={async (newSelectedShader: DropdownOption) => {
+                            setSelectedShader(newSelectedShader);
+                            await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
+                            let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                            setCurrentEffect((eff.result as { effect: string }).effect || "");
+                            // Fetch updated params for new shader
+                            await fetchShaderParams();
+                        }}
+                    />
+                </PanelSectionRow>
+            </PanelSection>
 
-            {/* Dynamic shader parameters */}
             {hasParams && (
-                <>
-                    <PanelSectionRow>
-                        <b>{selectedShader.data} parameters</b>
-                    </PanelSectionRow>
+                <PanelSection title="Parameters">
                     {shaderParams.map(p => renderParam(p))}
                     <PanelSectionRow>
                         <ButtonItem
@@ -272,26 +264,31 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                             }}
                         >Reset to Defaults</ButtonItem>
                     </PanelSectionRow>
-                </>
+                </PanelSection>
             )}
 
-            <PanelSectionRow>
-                <ButtonItem
-                    disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
-                    onClick={async () => {
-                        setApplyDisabled(true);
-                        setTimeout(() => setApplyDisabled(false), 1000);
-                        await applyShader();
-                    }}
-                >Force Apply</ButtonItem>
-            </PanelSectionRow>
-            <PanelSectionRow>
-                <div>Place any custom shaders in <pre>~/.local/share/gamescope</pre><pre>/reshade/Shaders</pre> so that the .fx files are in the root of the Shaders folder.</div>
-            </PanelSectionRow>
-            <PanelSectionRow>
-                <div>WARNING: Shaders can lead to dropped frames and possibly even severe performance problems.</div>
-            </PanelSectionRow>
-        </PanelSection>
+            <PanelSection title="Misc">
+                <PanelSectionRow>
+                    <ButtonItem
+                        disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
+                        onClick={async () => {
+                            setApplyDisabled(true);
+                            setTimeout(() => setApplyDisabled(false), 1000);
+                            await applyShader();
+                        }}
+                    >Force Apply</ButtonItem>
+                </PanelSectionRow>
+            </PanelSection>
+
+            <PanelSection title="Information">
+                <PanelSectionRow>
+                    <div>Place any custom shaders in <pre>~/.local/share/gamescope</pre><pre>/reshade/Shaders</pre> so that the .fx files are in the root of the Shaders folder.</div>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                    <div>WARNING: Shaders can lead to dropped frames and possibly even severe performance problems.</div>
+                </PanelSectionRow>
+            </PanelSection>
+        </div>
     );
 };
 

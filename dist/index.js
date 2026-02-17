@@ -192,52 +192,38 @@
           return null; // unsupported type (e.g. combo with single option)
       };
       const hasParams = shaderParams.length > 0;
-      return (window.SP_REACT.createElement(deckyFrontendLib.PanelSection, null,
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement("b", null, "Current Running App")),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement("div", null,
-                  window.SP_REACT.createElement("div", null,
-                      window.SP_REACT.createElement("b", null, "ID:"),
-                      " ",
-                      currentGameId),
-                  window.SP_REACT.createElement("div", null,
-                      window.SP_REACT.createElement("b", null, "Name:"),
-                      " ",
-                      currentGameName),
-                  window.SP_REACT.createElement("div", null,
-                      window.SP_REACT.createElement("b", null, "Shader:"),
-                      " ",
-                      currentEffect))),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement(deckyFrontendLib.ToggleField, { label: "Enable Shaders", checked: shadersEnabled, onChange: async (enabled) => {
-                      setShadersEnabled(enabled);
-                      await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
-                      if (enabled) {
-                          await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
-                      }
-                      else {
-                          await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
-                      }
-                      let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                      setCurrentEffect(eff.result.effect || "");
-                  } })),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement("b", null, "Select Shader")),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement(deckyFrontendLib.Dropdown, { menuLabel: "Select shader", strDefaultLabel: selectedShader.label, rgOptions: shaderOptions, selectedOption: selectedShader, onChange: async (newSelectedShader) => {
-                      setSelectedShader(newSelectedShader);
-                      await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
-                      let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                      setCurrentEffect(eff.result.effect || "");
-                      // Fetch updated params for new shader
-                      await fetchShaderParams();
-                  } })),
-          hasParams && (window.SP_REACT.createElement(window.SP_REACT.Fragment, null,
+      return (window.SP_REACT.createElement("div", null,
+          window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Game" },
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-                  window.SP_REACT.createElement("b", null,
-                      selectedShader.data,
-                      " parameters")),
+                  window.SP_REACT.createElement("div", null,
+                      window.SP_REACT.createElement("div", null,
+                          window.SP_REACT.createElement("b", null, "Current Game:"),
+                          " ",
+                          currentGameName)))),
+          window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Shader" },
+              window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement(deckyFrontendLib.ToggleField, { label: "Enable Shaders", checked: shadersEnabled, onChange: async (enabled) => {
+                          setShadersEnabled(enabled);
+                          await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
+                          if (enabled) {
+                              await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
+                          }
+                          else {
+                              await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
+                          }
+                          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                          setCurrentEffect(eff.result.effect || "");
+                      } })),
+              window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement(deckyFrontendLib.Dropdown, { menuLabel: "Select shader", strDefaultLabel: selectedShader.label, rgOptions: shaderOptions, selectedOption: selectedShader, onChange: async (newSelectedShader) => {
+                          setSelectedShader(newSelectedShader);
+                          await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
+                          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                          setCurrentEffect(eff.result.effect || "");
+                          // Fetch updated params for new shader
+                          await fetchShaderParams();
+                      } }))),
+          hasParams && (window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Parameters" },
               shaderParams.map(p => renderParam(p)),
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
                   window.SP_REACT.createElement(deckyFrontendLib.ButtonItem, { disabled: !shadersEnabled || selectedShader.data === "None", onClick: async () => {
@@ -245,20 +231,22 @@
                           await fetchShaderParams();
                           await applyShader();
                       } }, "Reset to Defaults")))),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement(deckyFrontendLib.ButtonItem, { disabled: applyDisabled || !shadersEnabled || selectedShader.data === "None", onClick: async () => {
-                      setApplyDisabled(true);
-                      setTimeout(() => setApplyDisabled(false), 1000);
-                      await applyShader();
-                  } }, "Force Apply")),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement("div", null,
-                  "Place any custom shaders in ",
-                  window.SP_REACT.createElement("pre", null, "~/.local/share/gamescope"),
-                  window.SP_REACT.createElement("pre", null, "/reshade/Shaders"),
-                  " so that the .fx files are in the root of the Shaders folder.")),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement("div", null, "WARNING: Shaders can lead to dropped frames and possibly even severe performance problems."))));
+          window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Misc" },
+              window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement(deckyFrontendLib.ButtonItem, { disabled: applyDisabled || !shadersEnabled || selectedShader.data === "None", onClick: async () => {
+                          setApplyDisabled(true);
+                          setTimeout(() => setApplyDisabled(false), 1000);
+                          await applyShader();
+                      } }, "Force Apply"))),
+          window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Information" },
+              window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement("div", null,
+                      "Place any custom shaders in ",
+                      window.SP_REACT.createElement("pre", null, "~/.local/share/gamescope"),
+                      window.SP_REACT.createElement("pre", null, "/reshade/Shaders"),
+                      " so that the .fx files are in the root of the Shaders folder.")),
+              window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+                  window.SP_REACT.createElement("div", null, "WARNING: Shaders can lead to dropped frames and possibly even severe performance problems.")))));
   };
   var index = deckyFrontendLib.definePlugin((serverApi) => {
       //	let suspend_registers = [
