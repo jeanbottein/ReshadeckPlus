@@ -14,11 +14,24 @@ import {
     Dropdown,
     DropdownOption,
     SingleDropdownOption,
-	SliderField
+    SliderField
 } from "decky-frontend-lib";
-import { VFC, useState, useEffect, useRef  } from "react";
+import { VFC, useState, useEffect, useRef } from "react";
 import { MdWbShade } from "react-icons/md";
 import logo from "../assets/logo.png";
+
+// ---- Types ----
+interface ShaderParam {
+    name: string;
+    type: string; // "float" | "bool" | "int"
+    default: number | boolean;
+    value: number | boolean;
+    ui_type?: string;
+    ui_min?: number;
+    ui_max?: number;
+    ui_step?: number;
+    ui_label?: string;
+}
 
 // Global refresh function reference
 let forceRefreshContent: (() => void) | null = null;
@@ -30,14 +43,14 @@ class ReshadeckLogic {
     constructor(serverAPI: ServerAPI) {
         this.serverAPI = serverAPI;
     }
-	
-	handleSuspend = async () => {
-		// Do nothing or log if you want
-	};
-	
-	handleResume = async () => {
-//		await this.serverAPI.callPluginMethod("apply_shader", {});
-	};
+
+    handleSuspend = async () => {
+        // Do nothing or log if you want
+    };
+
+    handleResume = async () => {
+        //		await this.serverAPI.callPluginMethod("apply_shader", {});
+    };
 }
 
 const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
@@ -46,14 +59,12 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const [shader_list, set_shader_list] = useState<string[]>([]);
     const [selectedShader, setSelectedShader] = useState<DropdownOption>(baseShader);
     const [shaderOptions, setShaderOptions] = useState<DropdownOption[]>([baseShader]);
-	const [currentGameId, setCurrentGameId] = useState<string>("Unknown");
-	const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
-	const [currentEffect, setCurrentEffect] = useState<string>("");
-	const [contrast, setContrast] = useState<number>(0.0);
-    const [sharpness, setSharpness] = useState<number>(1.0);
-	const contrastTimeout = useRef<number | null>(null);
-	const sharpnessTimeout = useRef<number | null>(null);
-	const [applyDisabled, setApplyDisabled] = useState(false);
+    const [currentGameId, setCurrentGameId] = useState<string>("Unknown");
+    const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
+    const [currentEffect, setCurrentEffect] = useState<string>("");
+    const [shaderParams, setShaderParams] = useState<ShaderParam[]>([]);
+    const paramTimeouts = useRef<{ [key: string]: number }>({});
+    const [applyDisabled, setApplyDisabled] = useState(false);
 
     // --- Add refreshVersion state for UI refreshes ---
     const [refreshVersion, setRefreshVersion] = useState(0);
@@ -68,84 +79,154 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         }
         return options;
     }
-	
-	const refreshCurrentGameInfo = async () => {
-	const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
-	const appname = `${Router.MainRunningApp?.display_name || "Unknown"}`;
-	setCurrentGameId(appid);
-	setCurrentGameName(appname);
-	
-	await serverAPI.callPluginMethod("set_current_game_info", {
-		appid,
-		appname
-	});
-	};
-	
+
+    const fetchShaderParams = async () => {
+        const resp = await serverAPI.callPluginMethod("get_shader_params", {});
+        if (resp.result && Array.isArray(resp.result)) {
+            setShaderParams(resp.result as ShaderParam[]);
+        } else {
+            setShaderParams([]);
+        }
+    };
+
+    const refreshCurrentGameInfo = async () => {
+        const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
+        const appname = `${Router.MainRunningApp?.display_name || "Unknown"}`;
+        setCurrentGameId(appid);
+        setCurrentGameName(appname);
+
+        await serverAPI.callPluginMethod("set_current_game_info", {
+            appid,
+            appname
+        });
+    };
+
     const initState = async () => {
-		await refreshCurrentGameInfo();
-		
+        await refreshCurrentGameInfo();
+
         let shader_list = (await serverAPI.callPluginMethod("get_shader_list", {})).result as string[];
         set_shader_list(shader_list)
         setShaderOptions(getShaderOptions(shader_list, baseShader));
-		
+
         let enabledResp = await serverAPI.callPluginMethod("get_shader_enabled", {});
         let isEnabled: boolean = enabledResp.result === true || enabledResp.result === "true";
         setShadersEnabled(isEnabled);
 
         let curr = await serverAPI.callPluginMethod("get_current_shader", {});
         setSelectedShader({ data: curr.result, label: (curr.result == "0" ? "None" : curr.result) } as SingleDropdownOption);
-		
-		let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-		setCurrentEffect((eff.result as { effect: string }).effect || "");
 
-		let contrastResp = await serverAPI.callPluginMethod("get_contrast", {});
-		let cVal = Number(contrastResp.result);
-		if (!isNaN(cVal)) {
-			setContrast(parseFloat(cVal.toFixed(6)));
-		}
-		
-		let sharpnessResp = await serverAPI.callPluginMethod("get_sharpness", {});
-		let sVal = Number(sharpnessResp.result);
-		if (!isNaN(sVal)) {
-			setSharpness(parseFloat(sVal.toFixed(6)));
-		}
+        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+        setCurrentEffect((eff.result as { effect: string }).effect || "");
+
+        // Fetch params for current shader
+        await fetchShaderParams();
     }
 
     // --- Init state on mount and on refreshVersion bump ---
     useEffect(() => {
         initState();
     }, [refreshVersion]);
-	
+
+    // --- Helper to debounce parameter changes ---
+    const handleParamChange = (paramName: string, value: number | boolean) => {
+        // Update local state immediately for responsive UI
+        setShaderParams(prev => prev.map(p =>
+            p.name === paramName ? { ...p, value } : p
+        ));
+        // Debounce the backend call
+        if (paramTimeouts.current[paramName]) {
+            clearTimeout(paramTimeouts.current[paramName]);
+        }
+        paramTimeouts.current[paramName] = window.setTimeout(() => {
+            serverAPI.callPluginMethod("set_shader_param", { name: paramName, value }).catch(console.error);
+        }, 500);
+    };
+
+    // --- Render a single parameter control ---
+    const renderParam = (p: ShaderParam) => {
+        const isDisabled = !shadersEnabled || selectedShader.data === "None";
+
+        if (p.type === "bool") {
+            return (
+                <PanelSectionRow key={p.name}>
+                    <ToggleField
+                        label={p.ui_label || p.name}
+                        checked={p.value as boolean}
+                        disabled={isDisabled}
+                        onChange={(checked: boolean) => {
+                            handleParamChange(p.name, checked);
+                        }}
+                    />
+                </PanelSectionRow>
+            );
+        }
+
+        if (p.type === "float" || p.type === "int") {
+            const uiMin = p.ui_min ?? 0;
+            const uiMax = p.ui_max ?? 2;
+            const uiStep = p.ui_step ?? 0.01;
+
+            // SliderField works with integer steps internally. We map the
+            // float range [ui_min, ui_max] onto integer ticks.
+            const numSteps = Math.round((uiMax - uiMin) / uiStep);
+            const currentTick = Math.round(((p.value as number) - uiMin) / uiStep);
+
+            return (
+                <PanelSectionRow key={p.name}>
+                    <SliderField
+                        bottomSeparator="none"
+                        label={`${p.ui_label || p.name}: ${(p.value as number).toFixed(2)}`}
+                        min={0}
+                        max={numSteps}
+                        step={1}
+                        value={currentTick}
+                        disabled={isDisabled}
+                        onChange={(tick: number) => {
+                            const real = uiMin + tick * uiStep;
+                            // Clamp to avoid float drift
+                            const clamped = Math.min(uiMax, Math.max(uiMin, parseFloat(real.toFixed(6))));
+                            handleParamChange(p.name, clamped);
+                        }}
+                    />
+                </PanelSectionRow>
+            );
+        }
+
+        return null; // unsupported type (e.g. combo with single option)
+    };
+
+    const hasParams = shaderParams.length > 0;
+
     return (
         <PanelSection>
-			<PanelSectionRow>
-				<b>Current Running App</b>
-			</PanelSectionRow>
-			<PanelSectionRow>
-			<div>
-				<div><b>ID:</b> {currentGameId}</div>
-				<div><b>Name:</b> {currentGameName}</div>
-				<div><b>Shader:</b> {currentEffect}</div>
-			</div>
-			</PanelSectionRow>
             <PanelSectionRow>
-              <ToggleField
-                label="Enable Shaders"
-                checked={shadersEnabled}
-                onChange={async (enabled: boolean) => {
-					setShadersEnabled(enabled);
-					await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
-					if (enabled) {
-					await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
-					} else {
-					await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
-					}
-					let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-					setCurrentEffect((eff.result as { effect: string }).effect || "");
-                }}
-              />
+                <b>Current Running App</b>
             </PanelSectionRow>
-			<PanelSectionRow>
+            <PanelSectionRow>
+                <div>
+                    <div><b>ID:</b> {currentGameId}</div>
+                    <div><b>Name:</b> {currentGameName}</div>
+                    <div><b>Shader:</b> {currentEffect}</div>
+                </div>
+            </PanelSectionRow>
+            <PanelSectionRow>
+                <ToggleField
+                    label="Enable Shaders"
+                    checked={shadersEnabled}
+                    onChange={async (enabled: boolean) => {
+                        setShadersEnabled(enabled);
+                        await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
+                        if (enabled) {
+                            await serverAPI.callPluginMethod("toggle_shader", { shader_name: selectedShader.data });
+                        } else {
+                            await serverAPI.callPluginMethod("toggle_shader", { shader_name: "None" });
+                        }
+                        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                        setCurrentEffect((eff.result as { effect: string }).effect || "");
+                    }}
+                />
+            </PanelSectionRow>
+            <PanelSectionRow>
                 <b>Select Shader</b>
             </PanelSectionRow>
             <PanelSectionRow>
@@ -155,68 +236,47 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     rgOptions={shaderOptions}
                     selectedOption={selectedShader}
                     onChange={async (newSelectedShader: DropdownOption) => {
-						setSelectedShader(newSelectedShader);
+                        setSelectedShader(newSelectedShader);
                         await serverAPI.callPluginMethod("set_shader", { "shader_name": newSelectedShader.data });
-						let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-						setCurrentEffect((eff.result as { effect: string }).effect || "");
+                        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                        setCurrentEffect((eff.result as { effect: string }).effect || "");
+                        // Fetch updated params for new shader
+                        await fetchShaderParams();
                     }}
                 />
             </PanelSectionRow>
             <PanelSectionRow>
-				<ButtonItem
-					disabled={applyDisabled}
-					onClick={async () => {
-						setApplyDisabled(true);
-						setTimeout(() => setApplyDisabled(false), 1000); // 1 second lockout
-						await serverAPI.callPluginMethod("apply_shader", {});
-						let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-						setCurrentEffect((eff.result as { effect: string }).effect || "");
-				}}
-				>Apply Shader</ButtonItem>
-            </PanelSectionRow>
-			<PanelSectionRow>
-				<b>CAS.fx parameters</b>
-			</PanelSectionRow>
-            {/* Contrast Slider */}
-            <PanelSectionRow>
-                <SliderField
-                    bottomSeparator="none"
-                    label={`Contrast: ${contrast.toFixed(2)}`}
-                    min={0}
-                    max={20}
-					step={1}
-                    value={Math.round(contrast * 10)}
-					disabled={!(shadersEnabled && selectedShader.data === "CAS.fx")}
-                    onChange={async (val: number) => {
-                        const real = val / 10;
-                        setContrast(real);
-						if (contrastTimeout.current) clearTimeout(contrastTimeout.current);
-						contrastTimeout.current = window.setTimeout(() => {
-							serverAPI.callPluginMethod("set_contrast", { value: real }).catch(console.error);
-						}, 1000);
+                <ButtonItem
+                    disabled={applyDisabled}
+                    onClick={async () => {
+                        setApplyDisabled(true);
+                        setTimeout(() => setApplyDisabled(false), 1000); // 1 second lockout
+                        await serverAPI.callPluginMethod("apply_shader", {});
+                        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+                        setCurrentEffect((eff.result as { effect: string }).effect || "");
                     }}
-                />
+                >Apply Shader</ButtonItem>
             </PanelSectionRow>
-            {/* Sharpness Slider */}
-            <PanelSectionRow>
-                <SliderField
-                    bottomSeparator="none"
-                    label={`Sharpness: ${sharpness.toFixed(2)}`}
-                    min={0}
-                    max={20}
-					step={1}
-                    value={Math.round(sharpness * 10)}
-					disabled={!(shadersEnabled && selectedShader.data === "CAS.fx")}
-                    onChange={async (val: number) => {
-                        const real = val / 10;
-                        setSharpness(real);
-						if (sharpnessTimeout.current) clearTimeout(sharpnessTimeout.current);
-						sharpnessTimeout.current = window.setTimeout(() => {
-							serverAPI.callPluginMethod("set_sharpness", { value: real }).catch(console.error);
-						}, 1000);
-                    }}
-                />
-            </PanelSectionRow>
+
+            {/* Dynamic shader parameters */}
+            {hasParams && (
+                <>
+                    <PanelSectionRow>
+                        <b>{selectedShader.data} parameters</b>
+                    </PanelSectionRow>
+                    {shaderParams.map(p => renderParam(p))}
+                    <PanelSectionRow>
+                        <ButtonItem
+                            disabled={!shadersEnabled || selectedShader.data === "None"}
+                            onClick={async () => {
+                                await serverAPI.callPluginMethod("reset_shader_params", {});
+                                await fetchShaderParams();
+                            }}
+                        >Reset to Defaults</ButtonItem>
+                    </PanelSectionRow>
+                </>
+            )}
+
             <PanelSectionRow>
                 <div>Place any custom shaders in <pre>~/.local/share/gamescope</pre><pre>/reshade/Shaders</pre> so that the .fx files are in the root of the Shaders folder.</div>
             </PanelSectionRow>
@@ -228,11 +288,11 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 };
 
 export default definePlugin((serverApi: ServerAPI) => {
-	let logic = new ReshadeckLogic(serverApi);
-//	let suspend_registers = [
-//		window.SteamClient.System.RegisterForOnSuspendRequest(logic.handleSuspend),
-//		window.SteamClient.System.RegisterForOnResumeFromSuspend(logic.handleResume),
-//	];
+    let logic = new ReshadeckLogic(serverApi);
+    //	let suspend_registers = [
+    //		window.SteamClient.System.RegisterForOnSuspendRequest(logic.handleSuspend),
+    //		window.SteamClient.System.RegisterForOnResumeFromSuspend(logic.handleResume),
+    //	];
 
     let lastAppId = `${Router.MainRunningApp?.appid || "Unknown"}`;
     const interval = setInterval(async () => {
@@ -255,12 +315,11 @@ export default definePlugin((serverApi: ServerAPI) => {
         content: <Content serverAPI={serverApi} />,
         icon: <MdWbShade />,
         onDismount() {
-        //    suspend_registers[0].unregister();
-        //    suspend_registers[1].unregister();
+            //    suspend_registers[0].unregister();
+            //    suspend_registers[1].unregister();
 
             clearInterval(interval);
         },
         alwaysRender: true
     };
 });
-
