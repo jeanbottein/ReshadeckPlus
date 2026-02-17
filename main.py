@@ -10,7 +10,9 @@ import re
 logger = decky_plugin.logger
 
 destination_folder = decky_plugin.DECKY_USER_HOME + "/.local/share/gamescope/reshade/Shaders"
+textures_destination = decky_plugin.DECKY_USER_HOME + "/.local/share/gamescope/reshade/Textures"
 shaders_folder = decky_plugin.DECKY_PLUGIN_DIR + "/shaders"
+textures_folder = decky_plugin.DECKY_PLUGIN_DIR + "/textures"
 config_file = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR + "/config.json"
 
 # ---------------------------------------------------------------------------
@@ -433,6 +435,16 @@ class Plugin:
                     os.chmod(dest_path, 0o644)
                 except Exception:
                     decky_plugin.logger.debug(f"could not copy {item}")
+            # Copy textures to the gamescope Textures folder
+            if Path(textures_folder).exists():
+                Path(textures_destination).mkdir(parents=True, exist_ok=True)
+                for item in Path(textures_folder).iterdir():
+                    if item.is_file():
+                        try:
+                            dest_path = shutil.copy(item, textures_destination)
+                            os.chmod(dest_path, 0o644)
+                        except Exception:
+                            decky_plugin.logger.debug(f"could not copy {item}")
             decky_plugin.logger.info("Initialized")
             decky_plugin.logger.info(str(await Plugin.get_shader_list(self)))
             Plugin.load_config()
