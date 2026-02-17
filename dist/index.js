@@ -218,8 +218,7 @@
                           await initState();
                       } })),
               perGame && (window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-                  window.SP_REACT.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "8px" } },
-                      currentAppId !== "steamos" && currentAppId !== "Unknown" && (window.SP_REACT.createElement("img", { src: `https://cdn.cloudflare.steamstatic.com/steam/apps/${currentAppId}/header.jpg`, alt: currentGameName, style: { width: "95%", borderRadius: "4px" }, onError: (e) => { e.currentTarget.style.display = 'none'; } })),
+                  window.SP_REACT.createElement("div", { style: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center" } },
                       window.SP_REACT.createElement("div", { style: { fontWeight: "bold" } }, currentGameName))))),
           window.SP_REACT.createElement(deckyFrontendLib.PanelSection, { title: "Shader" },
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,

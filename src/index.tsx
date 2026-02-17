@@ -238,15 +238,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
                 {perGame && (
                     <PanelSectionRow>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "8px" }}>
-                            {currentAppId !== "steamos" && currentAppId !== "Unknown" && (
-                                <img
-                                    src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${currentAppId}/header.jpg`}
-                                    alt={currentGameName}
-                                    style={{ width: "95%", borderRadius: "4px" }}
-                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                />
-                            )}
+                        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center" }}>
                             <div style={{ fontWeight: "bold" }}>{currentGameName}</div>
                         </div>
                     </PanelSectionRow>
