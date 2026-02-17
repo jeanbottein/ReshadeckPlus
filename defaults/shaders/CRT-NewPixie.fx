@@ -3,6 +3,7 @@
 // newpixie CRT
 // by Mattias Gustavsson
 // adapted for slang by hunterk
+// customized by jeanbottein
 
 /*
 ------------------------------------------------------------------------------
