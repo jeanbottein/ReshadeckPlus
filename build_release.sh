@@ -47,8 +47,8 @@ mkdir -p "$STAGING_DIR"
 echo "Staging files..."
 
 # 3. Copy necessary files to the staging directory
-# Using -L to dereference symlinks (for shaders and textures)
-cp -rL \
+# Using cp to copy files (symlinks removed)
+cp -r \
     dist \
     shaders \
     textures \
