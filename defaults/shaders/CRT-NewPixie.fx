@@ -141,6 +141,28 @@ uniform bool scanroll <
 	ui_label = "Rolling Scanlines [CRT-NewPixie]";
 > = true;
 
+uniform float ghs <
+	ui_type = "drag";
+	ui_min = 0.0;
+	ui_max = 1.0;
+	ui_step = 0.01;
+	ui_label = "Ghosting Strength [CRT-NewPixie]";
+> = 0.15;
+
+uniform int border_mode <
+	ui_type = "combo";
+	ui_items = "Off (show stretch)\0Hard Cut\0Smooth Fade\0";
+	ui_label = "Border Mode [CRT-NewPixie]";
+> = 2;
+
+uniform float border_smooth <
+	ui_type = "drag";
+	ui_min = 0.001;
+	ui_max = 0.15;
+	ui_step = 0.005;
+	ui_label = "Border Smoothness [CRT-NewPixie]";
+> = 0.03;
+
 float3 tsample( sampler samp, float2 tc, float offs, float2 resolution )
 {
 	tc = tc * float2(1.025, 0.92) + float2(-0.0125, 0.04);
@@ -201,7 +223,6 @@ float4 PS_NewPixie_Final(float4 pos: SV_Position, float2 uv_tx : TEXCOORD0) : SV
     i = (1.0-i) * 0.85 + 0.15; 
     
     /* Ghosting */
-    float ghs = 0.15;
     float3 r = tsample(GaussianBlurSampler, float2(x-0.014*1.0, -0.027)*0.85+0.007*float2( 0.35*sin(1.0/7.0 + 15.0*curved_uv.y + 0.9*time), 
         0.35*sin( 2.0/7.0 + 10.0*curved_uv.y + 1.37*time) )+float2(scuv.x+0.001,scuv.y+0.001),
         5.5+1.3*sin( 3.0/9.0 + 31.0*curved_uv.x + 1.70*time),resolution).xyz*float3(0.5,0.25,0.25);
@@ -247,14 +268,25 @@ float4 PS_NewPixie_Final(float4 pos: SV_Position, float2 uv_tx : TEXCOORD0) : SV
     /* Flicker */
     col *= (1.0-0.004*(sin(50.0*time+curved_uv.y*2.0)*0.5+0.5));
 		
-    /* Clamp */
-//    if(max(abs(uv.x-0.5),abs(uv.y-0.5))>0.5)
-//        col = float3(0.0,0.0,0.0);
-		
-//    if (curved_uv.x < 0.0 || curved_uv.x > 1.0)
-//        col *= 0.0;
-//    if (curved_uv.y < 0.0 || curved_uv.y > 1.0)
-//        col *= 0.0;
+    /* Border / Edge Masking */
+    if (border_mode == 1)
+    {
+        // Hard cut: black out anything outside the curved area
+        if (curved_uv.x < 0.0 || curved_uv.x > 1.0)
+            col = float3(0.0, 0.0, 0.0);
+        if (curved_uv.y < 0.0 || curved_uv.y > 1.0)
+            col = float3(0.0, 0.0, 0.0);
+    }
+    else if (border_mode == 2)
+    {
+        // Smooth fade: gradually darken toward the curved edges
+        float mask = smoothstep(0.0, border_smooth, curved_uv.x)
+                   * smoothstep(0.0, border_smooth, curved_uv.y)
+                   * smoothstep(0.0, border_smooth, 1.0 - curved_uv.x)
+                   * smoothstep(0.0, border_smooth, 1.0 - curved_uv.y);
+        col *= mask;
+    }
+    // border_mode == 0 : do nothing, keep original stretch
 
     uv = curved_uv;
 	
