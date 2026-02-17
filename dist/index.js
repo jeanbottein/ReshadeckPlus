@@ -145,16 +145,23 @@
       React.useEffect(() => {
           initState();
       }, [refreshVersion]);
-      // --- Helper to debounce parameter changes ---
+      // --- Helper to auto-apply the shader (forces gamescope reload) ---
+      const applyShader = async () => {
+          await serverAPI.callPluginMethod("apply_shader", {});
+          let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+          setCurrentEffect(eff.result.effect || "");
+      };
+      // --- Helper to debounce parameter changes with auto-apply ---
       const handleParamChange = (paramName, value) => {
           // Update local state immediately for responsive UI
           setShaderParams(prev => prev.map(p => p.name === paramName ? { ...p, value } : p));
-          // Debounce the backend call
+          // Debounce the backend call + auto-apply
           if (paramTimeouts.current[paramName]) {
               clearTimeout(paramTimeouts.current[paramName]);
           }
-          paramTimeouts.current[paramName] = window.setTimeout(() => {
-              serverAPI.callPluginMethod("set_shader_param", { name: paramName, value }).catch(console.error);
+          paramTimeouts.current[paramName] = window.setTimeout(async () => {
+              await serverAPI.callPluginMethod("set_shader_param", { name: paramName, value });
+              await applyShader();
           }, 500);
       };
       // --- Render a single parameter control ---
@@ -226,14 +233,6 @@
                       // Fetch updated params for new shader
                       await fetchShaderParams();
                   } })),
-          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
-              window.SP_REACT.createElement(deckyFrontendLib.ButtonItem, { disabled: applyDisabled, onClick: async () => {
-                      setApplyDisabled(true);
-                      setTimeout(() => setApplyDisabled(false), 1000); // 1 second lockout
-                      await serverAPI.callPluginMethod("apply_shader", {});
-                      let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                      setCurrentEffect(eff.result.effect || "");
-                  } }, "Apply Shader")),
           hasParams && (window.SP_REACT.createElement(window.SP_REACT.Fragment, null,
               window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
                   window.SP_REACT.createElement("b", null,
@@ -244,7 +243,14 @@
                   window.SP_REACT.createElement(deckyFrontendLib.ButtonItem, { disabled: !shadersEnabled || selectedShader.data === "None", onClick: async () => {
                           await serverAPI.callPluginMethod("reset_shader_params", {});
                           await fetchShaderParams();
+                          await applyShader();
                       } }, "Reset to Defaults")))),
+          window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
+              window.SP_REACT.createElement(deckyFrontendLib.ButtonItem, { disabled: applyDisabled || !shadersEnabled || selectedShader.data === "None", onClick: async () => {
+                      setApplyDisabled(true);
+                      setTimeout(() => setApplyDisabled(false), 1000);
+                      await applyShader();
+                  } }, "Force Apply")),
           window.SP_REACT.createElement(deckyFrontendLib.PanelSectionRow, null,
               window.SP_REACT.createElement("div", null,
                   "Place any custom shaders in ",

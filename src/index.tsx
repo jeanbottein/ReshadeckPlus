@@ -127,18 +127,26 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         initState();
     }, [refreshVersion]);
 
-    // --- Helper to debounce parameter changes ---
+    // --- Helper to auto-apply the shader (forces gamescope reload) ---
+    const applyShader = async () => {
+        await serverAPI.callPluginMethod("apply_shader", {});
+        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
+        setCurrentEffect((eff.result as { effect: string }).effect || "");
+    };
+
+    // --- Helper to debounce parameter changes with auto-apply ---
     const handleParamChange = (paramName: string, value: number | boolean) => {
         // Update local state immediately for responsive UI
         setShaderParams(prev => prev.map(p =>
             p.name === paramName ? { ...p, value } : p
         ));
-        // Debounce the backend call
+        // Debounce the backend call + auto-apply
         if (paramTimeouts.current[paramName]) {
             clearTimeout(paramTimeouts.current[paramName]);
         }
-        paramTimeouts.current[paramName] = window.setTimeout(() => {
-            serverAPI.callPluginMethod("set_shader_param", { name: paramName, value }).catch(console.error);
+        paramTimeouts.current[paramName] = window.setTimeout(async () => {
+            await serverAPI.callPluginMethod("set_shader_param", { name: paramName, value });
+            await applyShader();
         }, 500);
     };
 
@@ -245,18 +253,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     }}
                 />
             </PanelSectionRow>
-            <PanelSectionRow>
-                <ButtonItem
-                    disabled={applyDisabled}
-                    onClick={async () => {
-                        setApplyDisabled(true);
-                        setTimeout(() => setApplyDisabled(false), 1000); // 1 second lockout
-                        await serverAPI.callPluginMethod("apply_shader", {});
-                        let eff = await serverAPI.callPluginMethod("get_current_effect", {});
-                        setCurrentEffect((eff.result as { effect: string }).effect || "");
-                    }}
-                >Apply Shader</ButtonItem>
-            </PanelSectionRow>
+
 
             {/* Dynamic shader parameters */}
             {hasParams && (
@@ -271,12 +268,23 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                             onClick={async () => {
                                 await serverAPI.callPluginMethod("reset_shader_params", {});
                                 await fetchShaderParams();
+                                await applyShader();
                             }}
                         >Reset to Defaults</ButtonItem>
                     </PanelSectionRow>
                 </>
             )}
 
+            <PanelSectionRow>
+                <ButtonItem
+                    disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
+                    onClick={async () => {
+                        setApplyDisabled(true);
+                        setTimeout(() => setApplyDisabled(false), 1000);
+                        await applyShader();
+                    }}
+                >Force Apply</ButtonItem>
+            </PanelSectionRow>
             <PanelSectionRow>
                 <div>Place any custom shaders in <pre>~/.local/share/gamescope</pre><pre>/reshade/Shaders</pre> so that the .fx files are in the root of the Shaders folder.</div>
             </PanelSectionRow>
