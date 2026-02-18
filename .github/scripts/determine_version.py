@@ -3,13 +3,59 @@ import sys
 import re
 import subprocess
 
-def get_latest_tag():
+def get_latest_remote_tag():
     try:
-        # Get the latest tag, suppressing errors if no tags exist
-        tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], stderr=subprocess.DEVNULL).decode().strip()
-        return tag
+        # Fetch references from remote
+        output = subprocess.check_output(["git", "ls-remote", "--tags", "origin"], stderr=subprocess.DEVNULL).decode().strip()
     except subprocess.CalledProcessError:
-        return None
+        print("Warning: Could not fetch remote tags. Falling back to v0.0.0", file=sys.stderr)
+        return "v0.0.0"
+
+    versions = []
+    
+    for line in output.split('\n'):
+        # line: SHA\trefs/tags/v1.0.0
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+            
+        ref = parts[1]
+        
+        # We only care about refs/tags/v...
+        # and ignore peeled tags ^{}
+        if ref.endswith('^{}'):
+             continue
+             
+        tag_name = ref.replace('refs/tags/', '')
+        
+        # Check strict vX.Y.Z format
+        match = re.match(r"^v?(\d+)\.(\d+)\.(\d+)$", tag_name)
+        if match:
+            major, minor, patch = map(int, match.groups())
+            versions.append(((major, minor, patch), tag_name))
+            
+    if not versions:
+        return "v0.0.0"
+        
+    # Sort by tuple (major, minor, patch) descending
+    versions.sort(key=lambda x: x[0], reverse=True)
+    
+    latest_tag = versions[0][1]
+    return latest_tag
+
+def ensure_tag_exists_locally(tag):
+    if tag == "v0.0.0": return
+    
+    # Check if exists
+    try:
+        subprocess.check_call(["git", "rev-parse", "--verify", tag], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        # Fetch it explicitly
+        print(f"Tag {tag} not found locally. Fetching from origin...", file=sys.stderr)
+        try:
+            subprocess.check_call(["git", "fetch", "origin", f"refs/tags/{tag}:refs/tags/{tag}"], stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            print(f"Failed to fetch tag {tag}", file=sys.stderr)
 
 
 def get_commits_since(ref):
@@ -152,12 +198,17 @@ def determine_version(current_version, commits):
     return new_version, True, "\n".join(changelog)
 
 def main():
-    current_tag = get_latest_tag()
+    current_tag = get_latest_remote_tag()
+    
     # Ensure tag starts with v for parsing
     if not current_tag:
         current_tag = "v0.0.0"
     if not current_tag.startswith("v"):
         current_tag = "v" + current_tag
+
+    # If we found a real tag, ensure we have it locally for git log
+    if current_tag != "v0.0.0":
+        ensure_tag_exists_locally(current_tag)
         
     commits = get_commits_since(current_tag)
     new_version, should_release, changelog = determine_version(current_tag, commits)
