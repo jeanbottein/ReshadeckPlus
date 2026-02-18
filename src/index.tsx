@@ -40,13 +40,14 @@ interface ShaderParam {
 const formatDisplayName = (name: string): string =>
     name.replace(/\.fx$/i, "").replace(/_/g, " ").replace(/\s*\[.*?\]\s*$/, "").trim();
 
+const baseShader = { data: "None", label: "No Shader" } as SingleDropdownOption;
+
 const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
-    const baseShader = { data: "None", label: "No Shader" } as SingleDropdownOption;
     const [shadersEnabled, setShadersEnabled] = useState<boolean>(false);
     const [selectedShader, setSelectedShader] = useState<DropdownOption>(baseShader);
     const [shaderOptions, setShaderOptions] = useState<DropdownOption[]>([baseShader]);
     const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
-    
+
     // Packages
     const [packageOptions, setPackageOptions] = useState<DropdownOption[]>([]);
     const [selectedPackage, setSelectedPackage] = useState<DropdownOption>({ data: "Default", label: "Default" });
@@ -107,14 +108,15 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         // Determine package from current shader
         let initialPackage = "Default";
         if (targetData && targetData !== "None" && targetData.includes("/")) {
-             initialPackage = targetData.split("/")[0];
+            initialPackage = targetData.split("/")[0];
         } else if (targetData && targetData !== "None") {
-             // Check if the current shader is actually in the Default package?
-             // Since we don't have the full list yet, we assume it is if no slash.
-             initialPackage = "Default";
+            // Check if the current shader is actually in the Default package?
+            // Since we don't have the full list yet, we assume it is if no slash.
+            initialPackage = "Default";
         }
-        
+
         // Select package
+        // Important: use find() on the NEW pkgOptions to get the exact object reference
         const matchedPkg = pkgOptions.find(p => p.data === initialPackage) || pkgOptions[0];
         setSelectedPackage(matchedPkg);
 
@@ -130,17 +132,14 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         } else {
             // If the active shader is in another package (e.g. we just switched games or something),
             // or if we simply failed to find it in the current list:
-            // For now, if we can't find it, we default to "None" visually, unless we prefer to show the raw path.
-            // But if we are viewing "Default" package and active is "SweetFX/Technicolor", checking "SweetFX/Technicolor" against ["Basic"] fails.
-            // So we probably want to set it to baseShader if not found in current package list.
-            
-            // However, targetData is the ACTIVE shader.
-            // If we are initing, we inferred the package from targetData, so it SHOULD be in the list.
-            
-            setSelectedShader({
-                data: targetData,
-                label: targetData === "None" ? "None" : formatDisplayName(targetData as string)
-            } as SingleDropdownOption);
+            if (targetData === "None") {
+                setSelectedShader(baseShader);
+            } else {
+                setSelectedShader({
+                    data: targetData,
+                    label: formatDisplayName(targetData as string)
+                } as SingleDropdownOption);
+            }
         }
 
         // 6. Fetch params

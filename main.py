@@ -511,7 +511,11 @@ class Plugin:
         # We assume any subdirectory in Shaders/ might be a package
         # Filter out hidden ones or temp
         dirs = [x.name for x in p.iterdir() if x.is_dir() and not x.name.startswith(".")]
-        return sorted(["Default"] + dirs, key=str.lower)
+        
+        # Filter out "Default" if it exists as a folder to avoid duplicates
+        dirs = [d for d in dirs if d.lower() != "default"]
+        
+        return ["Default"] + sorted(dirs, key=str.lower)
 
     async def get_shader_enabled(self):
         return Plugin._enabled
