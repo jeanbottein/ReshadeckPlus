@@ -156,6 +156,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         label={formatDisplayName(p.ui_label || p.name)}
                         checked={p.value as boolean}
                         disabled={isDisabled}
+                        bottomSeparator="none"
                         onChange={(checked: boolean) => {
                             handleParamChange(p.name, checked);
                         }}
@@ -213,6 +214,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         step={1}
                         value={currentTick}
                         disabled={isDisabled}
+                        bottomSeparator="none"
                         onChange={(tick: number) => {
                             const real = uiMin + tick * uiStep;
                             // Clamp to avoid float drift
@@ -237,6 +239,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <ToggleField
                         label="Per-Game Profile"
                         checked={perGame}
+                        bottomSeparator="none"
                         onChange={async (checked: boolean) => {
                             setPerGame(checked);
                             await serverAPI.callPluginMethod("set_per_game", { enabled: checked });
@@ -260,6 +263,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <ToggleField
                         label="Enable Shaders"
                         checked={shadersEnabled}
+                        bottomSeparator="none"
                         onChange={async (enabled: boolean) => {
                             setShadersEnabled(enabled);
                             await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
@@ -292,6 +296,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <PanelSectionRow>
                         <ButtonItem
                             disabled={!shadersEnabled || selectedShader.data === "None"}
+                            bottomSeparator="none"
                             onClick={async () => {
                                 await serverAPI.callPluginMethod("reset_shader_params", {});
                                 await fetchShaderParams();
@@ -306,6 +311,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 <PanelSectionRow>
                     <ButtonItem
                         disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
+                        bottomSeparator="none"
                         onClick={async () => {
                             setApplyDisabled(true);
                             setTimeout(() => setApplyDisabled(false), 1000);
