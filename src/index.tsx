@@ -50,7 +50,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const paramTimeouts = useRef<{ [key: string]: number }>({});
     const [applyDisabled, setApplyDisabled] = useState(false);
     const [perGame, setPerGame] = useState<boolean>(false);
-    const [currentAppId, setCurrentAppId] = useState<string>("Unknown");
 
     const getShaderOptions = (shaderList: string[]): DropdownOption[] => [
         baseShader,
