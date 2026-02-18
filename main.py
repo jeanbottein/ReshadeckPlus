@@ -14,6 +14,7 @@ textures_destination = decky_plugin.DECKY_USER_HOME + "/.local/share/gamescope/r
 shaders_folder = decky_plugin.DECKY_PLUGIN_DIR + "/shaders"
 textures_folder = decky_plugin.DECKY_PLUGIN_DIR + "/textures"
 config_file = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR + "/config.json"
+crash_file = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR + "/crash.json"
 
 # ---------------------------------------------------------------------------
 # Regex patterns for parsing .fx uniform parameters
@@ -594,9 +595,59 @@ class Plugin:
             return {"effect": "None"}
 
     # ------------------------------------------------------------------
+    # Crash Loop Protection (Canary)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _read_crash_count():
+        try:
+            if os.path.exists(crash_file):
+                with open(crash_file, "r") as f:
+                    return json.load(f).get("count", 0)
+        except Exception:
+            pass
+        return 0
+
+    @staticmethod
+    def _write_crash_count(count: int):
+        try:
+            with open(crash_file, "w") as f:
+                json.dump({"count": count}, f)
+        except Exception:
+            pass
+
+    @staticmethod
+    def check_crash_loop():
+        count = Plugin._read_crash_count()
+        # Threshold: 2 consecutive crashes
+        if count >= 2:
+            logger.warning(f"Crash loop detected (count={count}). Disabling shaders.")
+            Plugin._enabled = False
+            Plugin.save_config()  # Persist disabled state
+            Plugin._write_crash_count(0) # Reset count after taking action
+            return True
+        else:
+            Plugin._write_crash_count(count + 1)
+            return False
+
+    @staticmethod
+    async def mark_stable():
+        """Wait for 30 seconds of stable operation, then reset crash count."""
+        try:
+            await asyncio.sleep(30)
+            logger.info("System stable. Resetting crash count.")
+            Plugin._write_crash_count(0)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error in mark_stable: {e}")
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     async def _main(self):
+        # 1. Check for crash loop immediately
+        Plugin.check_crash_loop()
+
         try:
             Path(destination_folder).mkdir(parents=True, exist_ok=True)
             for item in Path(shaders_folder).glob("*.fx"):
@@ -625,5 +676,8 @@ class Plugin:
             if Plugin._enabled:
                 await asyncio.sleep(5)
                 await Plugin.apply_shader(self)
+            
+            # Start stability timer
+            asyncio.create_task(Plugin.mark_stable())
         except Exception:
             decky_plugin.logger.exception("main")
