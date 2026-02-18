@@ -50,7 +50,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const paramTimeouts = useRef<{ [key: string]: number }>({});
     const [applyDisabled, setApplyDisabled] = useState(false);
     const [perGame, setPerGame] = useState<boolean>(false);
-    const [currentAppId, setCurrentAppId] = useState<string>("Unknown");
 
     const getShaderOptions = (shaderList: string[]): DropdownOption[] => [
         baseShader,
@@ -74,7 +73,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
         // 2. Refresh info from backend (gets resolved ID like 'steamos' and per-game status)
         const info = (await serverAPI.callPluginMethod("get_game_info", {})).result as any;
-        setCurrentAppId(info.appid);
         setCurrentGameName(info.appname);
         setPerGame(info.per_game);
 
@@ -158,6 +156,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         label={formatDisplayName(p.ui_label || p.name)}
                         checked={p.value as boolean}
                         disabled={isDisabled}
+                        bottomSeparator="none"
                         onChange={(checked: boolean) => {
                             handleParamChange(p.name, checked);
                         }}
@@ -180,16 +179,18 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <div style={{ marginBottom: "4px", fontSize: "12px" }}>
                         {formatDisplayName(p.ui_label || p.name)}
                     </div>
-                    <Dropdown
-                        menuLabel={formatDisplayName(p.ui_label || p.name)}
-                        strDefaultLabel={selectedOption?.label as string || "Unknown"}
-                        rgOptions={comboOptions}
-                        selectedOption={selectedOption}
-                        disabled={isDisabled}
-                        onChange={(opt: DropdownOption) => {
-                            handleParamChange(p.name, opt.data as number);
-                        }}
-                    />
+                    <div style={{ marginTop: "4px", marginBottom: "10px", fontSize: "12px" }}>
+                        <Dropdown
+                            menuLabel={formatDisplayName(p.ui_label || p.name)}
+                            strDefaultLabel={selectedOption?.label as string || "Unknown"}
+                            rgOptions={comboOptions}
+                            selectedOption={selectedOption}
+                            disabled={isDisabled}
+                            onChange={(opt: DropdownOption) => {
+                                handleParamChange(p.name, opt.data as number);
+                            }}
+                        />
+                    </div>
                 </PanelSectionRow>
             );
         }
@@ -207,13 +208,13 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
             return (
                 <PanelSectionRow key={p.name}>
                     <SliderField
-                        bottomSeparator="none"
                         label={`${formatDisplayName(p.ui_label || p.name)}: ${(p.value as number).toFixed(2)}`}
                         min={0}
                         max={numSteps}
                         step={1}
                         value={currentTick}
                         disabled={isDisabled}
+                        bottomSeparator="none"
                         onChange={(tick: number) => {
                             const real = uiMin + tick * uiStep;
                             // Clamp to avoid float drift
@@ -238,6 +239,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <ToggleField
                         label="Per-Game Profile"
                         checked={perGame}
+                        bottomSeparator="none"
                         onChange={async (checked: boolean) => {
                             setPerGame(checked);
                             await serverAPI.callPluginMethod("set_per_game", { enabled: checked });
@@ -261,6 +263,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <ToggleField
                         label="Enable Shaders"
                         checked={shadersEnabled}
+                        bottomSeparator="none"
                         onChange={async (enabled: boolean) => {
                             setShadersEnabled(enabled);
                             await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
@@ -271,17 +274,19 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     />
                 </PanelSectionRow>
                 <PanelSectionRow>
-                    <Dropdown
-                        menuLabel="Select shader"
-                        strDefaultLabel={selectedShader.label as string}
-                        rgOptions={shaderOptions}
-                        selectedOption={selectedShader}
-                        onChange={async (newSelectedShader: DropdownOption) => {
-                            setSelectedShader(newSelectedShader);
-                            await serverAPI.callPluginMethod("set_shader", { shader_name: newSelectedShader.data });
-                            await fetchShaderParams();
-                        }}
-                    />
+                    <div style={{ marginTop: "4px" }}>
+                        <Dropdown
+                            menuLabel="Select shader"
+                            strDefaultLabel={selectedShader.label as string}
+                            rgOptions={shaderOptions}
+                            selectedOption={selectedShader}
+                            onChange={async (newSelectedShader: DropdownOption) => {
+                                setSelectedShader(newSelectedShader);
+                                await serverAPI.callPluginMethod("set_shader", { shader_name: newSelectedShader.data });
+                                await fetchShaderParams();
+                            }}
+                        />
+                    </div>
                 </PanelSectionRow>
             </PanelSection>
 
@@ -291,6 +296,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <PanelSectionRow>
                         <ButtonItem
                             disabled={!shadersEnabled || selectedShader.data === "None"}
+                            bottomSeparator="none"
                             onClick={async () => {
                                 await serverAPI.callPluginMethod("reset_shader_params", {});
                                 await fetchShaderParams();
@@ -305,6 +311,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 <PanelSectionRow>
                     <ButtonItem
                         disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
+                        bottomSeparator="none"
                         onClick={async () => {
                             setApplyDisabled(true);
                             setTimeout(() => setApplyDisabled(false), 1000);

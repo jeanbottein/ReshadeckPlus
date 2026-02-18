@@ -10,6 +10,16 @@ root of the `Shaders` folder. Then you can pick and apply the shader using the p
 
 ![Example Screenshot](reshadeck.png)
 
+# Installation
+
+1.  Download the plugin ZIP file from the [Releases](https://github.com/jeanbottein/Reshadeck/releases/latest).
+2.  Open Quick Access Menu (three dots button)
+3.  Navigate to Decky → Settings (gear icon)
+4.  Enable Developer Mode if not already enabled
+5.  Click Install Plugin from ZIP
+6.  Navigate to the downloaded ZIP file and select it
+7.  The plugin will install automatically
+
 # Caveats
 - Shaders can caused dropped frames in some rare cases and could also lead to severe performance degradation
 - Shaders will not be applied at startup

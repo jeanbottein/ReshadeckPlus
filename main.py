@@ -463,9 +463,10 @@ class Plugin:
     def _get_all_shaders():
         temp_pattern = re.compile(r"^.+_[A-Za-z0-9]{6}\.fx$")
         return sorted(
-            str(p.name)
+            (str(p.name)
             for p in Path(destination_folder).glob("*.fx")
-            if not temp_pattern.match(p.name)
+            if not temp_pattern.match(p.name)),
+            key=str.lower
         )
 
     async def get_shader_list(self):
