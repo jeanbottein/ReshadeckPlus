@@ -9,14 +9,31 @@ def get_latest_tag():
         tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], stderr=subprocess.DEVNULL).decode().strip()
         return tag
     except subprocess.CalledProcessError:
-        return "v0.0.0"
+        return None
 
-def get_commits_since(tag):
-    if tag == "v0.0.0":
-        # If no tags, get all commits
+def get_package_version():
+    import json
+    try:
+        with open("package.json", "r") as f:
+            data = json.load(f)
+            return data.get("version", "0.0.0")
+    except FileNotFoundError:
+        return "0.0.0"
+
+def get_commit_of_version_change(filename="package.json"):
+    try:
+        # Get the last commit hash that modified package.json
+        cmd = ["git", "log", "-n", "1", "--format=%H", "--", filename]
+        commit_hash = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+        return commit_hash
+    except subprocess.CalledProcessError:
+        return None
+def get_commits_since(ref):
+    if not ref or ref == "v0.0.0":
+        # If no ref, get all commits
         commit_range = "HEAD"
     else:
-        commit_range = f"{tag}..HEAD"
+        commit_range = f"{ref}..HEAD"
     
     # Format: hash subject body
     # We use a separator to parse easily
@@ -152,12 +169,43 @@ def determine_version(current_version, commits):
 
 def main():
     current_tag = get_latest_tag()
-    # Ensure tag starts with v for parsing but we might strip it for package.json
-    if not current_tag.startswith("v"):
-        current_tag = "v" + current_tag
+    pkg_version = get_package_version()
+    
+    # Normalize tag to not have 'v' for comparison, but keep original for git operations
+    tag_ver_str = current_tag.lstrip("v") if current_tag else "0.0.0"
+    
+    # Simple version comparison
+    def parse_ver(v):
+        try:
+            return list(map(int, v.split(".")))
+        except ValueError:
+            return [0, 0, 0]
+
+    pkg_v = parse_ver(pkg_version)
+    tag_v = parse_ver(tag_ver_str)
+    
+    base_version = tag_ver_str
+    start_ref = current_tag
+    
+    if pkg_v > tag_v:
+        # contents of package.json is newer than the last tag
+        print(f"Using package.json version {pkg_version} as base (newer than tag {tag_ver_str})")
+        base_version = pkg_version
         
-    commits = get_commits_since(current_tag)
-    new_version, should_release, changelog = determine_version(current_tag, commits)
+        # We need to find the commit where package.json was last changed
+        last_change_commit = get_commit_of_version_change()
+        if last_change_commit:
+            start_ref = last_change_commit
+        else:
+            # Fallback if we can't find history?
+            start_ref = current_tag 
+    else:
+        print(f"Using git tag {tag_ver_str} as base")
+        
+    commits = get_commits_since(start_ref)
+    
+    # Pass base_version (string like "1.5.0") to determine_version
+    new_version, should_release, changelog = determine_version(base_version, commits)
     
     # Output for GitHub Actions
     if os.getenv("GITHUB_OUTPUT"):
