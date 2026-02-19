@@ -47,7 +47,6 @@ const baseShader = { data: "None", label: "No Shader" } as SingleDropdownOption;
 
 const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const [masterEnabled, setMasterEnabled] = useState<boolean>(true);
-    const [shadersEnabled, setShadersEnabled] = useState<boolean>(false);
     const [selectedShader, setSelectedShader] = useState<DropdownOption>(baseShader);
     const [shaderList, setShaderList] = useState<string[]>([]);
     const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
@@ -112,11 +111,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
             : ["Default"];
         const pkgOptions = packages.map(p => ({ data: p, label: p } as SingleDropdownOption));
         setPackageOptions(pkgOptions);
-
-        // 4. Get enabled status
-        let enabledResp = await serverAPI.callPluginMethod("get_shader_enabled", {});
-        let isEnabled: boolean = enabledResp.result === true || enabledResp.result === "true";
-        setShadersEnabled(isEnabled);
 
         // 5. Get current shader
         let curr = await serverAPI.callPluginMethod("get_current_shader", {});
@@ -208,7 +202,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
     // --- Render a single parameter control ---
     const renderParam = (p: ShaderParam) => {
-        const isDisabled = !shadersEnabled || selectedShader.data === "None";
+        const isDisabled = selectedShader.data === "None";
 
         if (p.type === "bool") {
             return (
@@ -340,12 +334,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
             <PanelSection title="Profile">
                 <PanelSectionRow>
-                    <div style={{ display: "flex", flexDirection: "row" }}>
-                        <span style={{ fontWeight: "bold", marginRight: "5px" }}>Active profile:</span>
-                        <span>{perGame ? currentGameName : "Default"}</span>
-                    </div>
-                </PanelSectionRow>
-                <PanelSectionRow>
                     <ToggleField
                         label="Per-game profile"
                         checked={perGame}
@@ -357,23 +345,17 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         }}
                     />
                 </PanelSectionRow>
+                {perGame && (
+                    <PanelSectionRow>
+                        <div style={{ display: "flex", flexDirection: "row" }}>
+                            <span style={{ fontWeight: "bold", marginRight: "5px" }}>Active profile:</span>
+                            <span>{currentGameName}</span>
+                        </div>
+                    </PanelSectionRow>
+                )}
             </PanelSection>
 
             <PanelSection title="Shader">
-                <PanelSectionRow>
-                    <ToggleField
-                        label="Enable"
-                        checked={shadersEnabled}
-                        bottomSeparator="none"
-                        onChange={async (enabled: boolean) => {
-                            setShadersEnabled(enabled);
-                            await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: enabled });
-                            await serverAPI.callPluginMethod("toggle_shader", {
-                                shader_name: enabled ? selectedShader.data : "None"
-                            });
-                        }}
-                    />
-                </PanelSectionRow>
                 <PanelSectionRow key="Package">
                     <DropdownItem
                         label="Package"
@@ -399,6 +381,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                                 setShaderList([]);
                             }
                             setSelectedShader(baseShader);
+                            await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: false });
                             await serverAPI.callPluginMethod("set_shader", { shader_name: "None" });
                             setShaderParams([]);
                         }}
@@ -418,12 +401,14 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                             const idx = opt.data as number;
                             if (idx === -1) {
                                 setSelectedShader(baseShader);
+                                await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: false });
                                 await serverAPI.callPluginMethod("set_shader", { shader_name: "None" });
                                 setShaderParams([]);
                             } else {
                                 const path = shaderList[idx];
                                 const label = opt.label as string;
                                 setSelectedShader({ data: path, label });
+                                await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: true });
                                 await serverAPI.callPluginMethod("set_shader", { shader_name: path });
                                 await fetchShaderParams();
                             }
@@ -437,7 +422,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     {shaderParams.map(p => renderParam(p))}
                     <PanelSectionRow>
                         <ButtonItem
-                            disabled={!shadersEnabled || selectedShader.data === "None"}
+                            disabled={selectedShader.data === "None"}
                             bottomSeparator="none"
                             onClick={async () => {
                                 await serverAPI.callPluginMethod("reset_shader_params", {});
@@ -454,7 +439,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
             <PanelSection title="Misc">
                 <PanelSectionRow>
                     <ButtonItem
-                        disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
+                        disabled={applyDisabled || selectedShader.data === "None"}
                         bottomSeparator="none"
                         layout="below"
                         onClick={async () => {

@@ -463,9 +463,14 @@ class Plugin:
         try:
             Path(os.path.dirname(config_file)).mkdir(parents=True, exist_ok=True)
             data = {}
+            data = {}
             if os.path.exists(config_file):
-                with open(config_file, "r") as f:
-                    data = json.load(f)
+                try:
+                    with open(config_file, "r") as f:
+                        data = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Could not read config during save (resetting): {e}")
+                    data = {}
 
             key = Plugin._config_key()
             
@@ -572,7 +577,7 @@ class Plugin:
 
     async def set_master_enabled(self, enabled: bool):
         Plugin._master_enabled = enabled
-        Plugin.save_config()
+        Plugin._save_config_immediate()
         if not enabled:
             # Force clear
             await Plugin.toggle_shader(self, "None")
