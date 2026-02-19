@@ -57,6 +57,8 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const paramTimeouts = useRef<{ [key: string]: number }>({});
     const [applyDisabled, setApplyDisabled] = useState(false);
     const [perGame, setPerGame] = useState<boolean>(false);
+    const [resetConfirm, setResetConfirm] = useState(false);
+    const [resetConfigConfirm, setResetConfigConfirm] = useState(false);
 
     const shaderDropdownOptions = useMemo((): DropdownOption[] => {
         const options: DropdownOption[] = [
@@ -386,6 +388,8 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 </PanelSection>
             )}
 
+
+
             <PanelSection title="Misc">
                 <PanelSectionRow>
                     <ButtonItem
@@ -398,6 +402,79 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         }}
                     >Force Apply</ButtonItem>
                 </PanelSectionRow>
+
+                <PanelSectionRow>
+                    <div style={{ padding: "10px 0", color: "#ddd" }}>
+                        Warning: This will remove all files in <code style={{ userSelect: "text" }}>~/.local/share/gamescope/reshade</code> and replace them with the default files from this plugin.
+                    </div>
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    {!resetConfirm ? (
+                        <ButtonItem
+                            bottomSeparator="none"
+                            onClick={() => setResetConfirm(true)}
+                        >
+                            Reset Local Reshade Directory
+                        </ButtonItem>
+                    ) : (
+                        <div style={{ display: "flex", gap: "10px" }}>
+                            <ButtonItem
+                                bottomSeparator="none"
+                                onClick={async () => {
+                                    await serverAPI.callPluginMethod("reset_reshade_directory", {});
+                                    await initState();
+                                    setResetConfirm(false);
+                                }}
+                            >
+                                Confirm Reset
+                            </ButtonItem>
+                            <ButtonItem
+                                bottomSeparator="none"
+                                onClick={() => setResetConfirm(false)}
+                            >
+                                Cancel
+                            </ButtonItem>
+                        </div>
+                    )}
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    <div style={{ padding: "10px 0", color: "#ddd" }}>
+                        Warning: This will reset all plugin settings, including per-game profiles and shader parameters.
+                    </div>
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    {!resetConfigConfirm ? (
+                        <ButtonItem
+                            bottomSeparator="none"
+                            onClick={() => setResetConfigConfirm(true)}
+                        >
+                            Reset Plugin Configuration
+                        </ButtonItem>
+                    ) : (
+                        <div style={{ display: "flex", gap: "10px" }}>
+                            <ButtonItem
+                                bottomSeparator="none"
+                                onClick={async () => {
+                                    await serverAPI.callPluginMethod("reset_configuration", {});
+                                    await initState();
+                                    setResetConfigConfirm(false);
+                                }}
+                            >
+                                Confirm Reset
+                            </ButtonItem>
+                            <ButtonItem
+                                bottomSeparator="none"
+                                onClick={() => setResetConfigConfirm(false)}
+                            >
+                                Cancel
+                            </ButtonItem>
+                        </div>
+                    )}
+                </PanelSectionRow>
+
             </PanelSection>
 
             <PanelSection title="Information">

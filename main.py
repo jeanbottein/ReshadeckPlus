@@ -709,51 +709,31 @@ class Plugin:
         except Exception as e:
             logger.error(f"Error in mark_stable: {e}")
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-    async def _main(self):
-        # 1. Check for crash loop immediately
-        # 1. Check for crash loop moved after config load
-
+    @staticmethod
+    def _install_resources():
+        """Copy local plugin resources (Shaders/Textures) to the target gamescope directory."""
         try:
+            # 1. Shaders
             Path(destination_folder).mkdir(parents=True, exist_ok=True)
-            
-            # Recursively copy shaders folder content to destination
-            # This handles subdirectories (SweetFX, etc.) and follows symlinks by default (via copytree default?)
-            # copytree(src, dst, dirs_exist_ok=True) added in 3.8.
-            # We want to copy the CONTENTS of shaders_folder into destination_folder.
-            # shutil.copytree(src, dst) expects dst to NOT exist or be empty if dirs_exist_ok=True.
-            
-            # Using dirs_exist_ok=True allows merging.
-            # However, we only simply want to overlay.
-            # Note: shaders_folder locally has symlinks. We want to copy content.
-            # shutil.copytree default symlinks=False (copies content). Good.
-            
             try:
+                # Copy contents of shaders_folder into destination_folder
                 shutil.copytree(shaders_folder, destination_folder, dirs_exist_ok=True)
             except Exception as e:
-                 decky_plugin.logger.debug(f"copytree failed: {e}. Fallback to manual copy?")
-                 
-            # Fix permissions
+                decky_plugin.logger.debug(f"copytree shaders failed: {e}")
+
+            # Fix permissions for shaders
             for root, dirs, files in os.walk(destination_folder):
                 for f in files:
-                    if f.endswith(".fx") or f.endswith(".sh"):
+                    if f.endswith(".fx") or f.endswith(".fxh") or f.endswith(".sh"):
                         try:
-                            os.chmod(os.path.join(root, f), 0o644)
-                            # Make the script executable
+                            path = os.path.join(root, f)
+                            os.chmod(path, 0o644)
                             if f.endswith(".sh"):
-                                os.chmod(os.path.join(root, f), 0o755)
+                                os.chmod(path, 0o755)
                         except:
                             pass
-            
-            # for item in Path(shaders_folder).glob("*.fx"):
-            #     try:
-            #         dest_path = shutil.copy(item, destination_folder)
-            #         os.chmod(dest_path, 0o644)
-            #     except Exception:
-            #         decky_plugin.logger.debug(f"could not copy {item}")
-            # Copy textures (including subdirectories) to the gamescope Textures folder
+
+            # 2. Textures
             if Path(textures_folder).exists():
                 try:
                     shutil.copytree(
@@ -761,12 +741,73 @@ class Plugin:
                         textures_destination,
                         dirs_exist_ok=True,
                     )
-                    # Fix permissions on all copied files
+                    # Fix permissions for textures
                     for root, dirs, files in os.walk(textures_destination):
                         for f in files:
                             os.chmod(os.path.join(root, f), 0o644)
                 except Exception:
                     decky_plugin.logger.debug(f"could not copy textures")
+
+        except Exception as e:
+            logger.error(f"Failed to install resources: {e}")
+
+    async def reset_reshade_directory(self):
+        """Delete the local gamescope reshade directory and reinstall default files."""
+        reshade_root = Path(destination_folder).parent # .../reshade
+        logger.info(f"Resetting reshade directory: {reshade_root}")
+        if reshade_root.exists():
+            try:
+                shutil.rmtree(reshade_root)
+            except Exception as e:
+                logger.error(f"Failed to delete reshade directory: {e}")
+                return False
+        
+        Plugin._install_resources()
+        # After reset, we might want to ensure we aren't pointing to a non-existent shader?
+        # The frontend will eventually refresh.
+        return True
+
+    async def reset_configuration(self):
+        """Reset all plugin configuration to defaults."""
+        logger.info("Resetting plugin configuration")
+        
+        # Delete files
+        try:
+            if os.path.exists(config_file):
+                os.remove(config_file)
+            if os.path.exists(crash_file):
+                os.remove(crash_file)
+        except Exception as e:
+            logger.error(f"Failed to delete config files: {e}")
+            return False
+
+        # Reset internal state
+        Plugin._enabled = False
+        Plugin._current = "None"
+        Plugin._per_game = False
+        Plugin._active_category = "Default"
+        Plugin._params = {}
+        Plugin._params_meta = {}
+        
+        # Cancel any pending save
+        if Plugin._save_task:
+            Plugin._save_task.cancel()
+            Plugin._save_task = None
+
+        # Apply the "None" shader to clear any active effects
+        await Plugin.toggle_shader(self, "None")
+        
+        return True
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+    async def _main(self):
+        # 1. Check for crash loop moved after config load
+
+        try:
+            Plugin._install_resources()
+            
             decky_plugin.logger.info("Initialized")
             decky_plugin.logger.info(str(await Plugin.get_shader_list(self)))
             Plugin.load_config()
