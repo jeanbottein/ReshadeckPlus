@@ -424,12 +424,13 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         <ButtonItem
                             disabled={selectedShader.data === "None"}
                             bottomSeparator="none"
+                            layout="below"
                             onClick={async () => {
                                 await serverAPI.callPluginMethod("reset_shader_params", {});
                                 await fetchShaderParams();
                                 await applyShader();
                             }}
-                        >Reset to Defaults</ButtonItem>
+                        >Reset parameters</ButtonItem>
                     </PanelSectionRow>
                 </PanelSection>
             )}
