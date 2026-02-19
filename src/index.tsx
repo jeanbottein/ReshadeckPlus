@@ -16,7 +16,7 @@ import {
     showModal
 } from "decky-frontend-lib";
 import { VFC, useState, useEffect, useRef, useMemo } from "react";
-import { RiTvLine } from "react-icons/ri";
+import { RiTvLine, RiArrowDownSLine, RiArrowRightSLine, RiSeparator } from "react-icons/ri";
 
 declare global {
     interface Window {
@@ -60,6 +60,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const paramTimeouts = useRef<{ [key: string]: number }>({});
     const [applyDisabled, setApplyDisabled] = useState(false);
     const [perGame, setPerGame] = useState<boolean>(false);
+    const [infoExpanded, setInfoExpanded] = useState<boolean>(true);
 
     const shaderDropdownOptions = useMemo((): DropdownOption[] => {
         const options: DropdownOption[] = [
@@ -162,6 +163,13 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     // --- Init state on mount ---
     useEffect(() => {
         initState();
+    }, []);
+
+    useEffect(() => {
+        const stored = localStorage.getItem("reshadeck-info-expanded");
+        if (stored !== null) {
+            setInfoExpanded(stored === "true");
+        }
     }, []);
 
     // --- Poll for game changes and re-init state ---
@@ -293,16 +301,47 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     />
                 </PanelSectionRow>
                 <PanelSectionRow>
-                    <div style={{ fontSize: "0.85em", color: "#bbb", padding: "4px 0" }}>
-                        Disable to prevent shaders from applying. Use this if a shader is causing crashes, so you can safely change the configuration.
+                    <div
+                        style={{
+                            display: "flex",
+                            cursor: "pointer"
+                        }}
+                        onClick={() => {
+                            const newVal = !infoExpanded;
+                            setInfoExpanded(newVal);
+                            localStorage.setItem("reshadeck-info-expanded", String(newVal));
+                        }}
+                    >
+                        <div style={{ fontWeight: "bold" }}>Information</div>
+                        <div style={{ fontSize: "1.2em" }}>{infoExpanded ? <RiArrowDownSLine /> : <RiArrowRightSLine />}</div>
                     </div>
+                    {infoExpanded && (
+                        <>
+                            <div>- Disabling the master switch will prevent shaders from applying.</div>
+                            <div>- WARNING: Shaders can lead to dropped frames and possibly even severe performance problems.</div>
+                            <div>- You can add custom .fx shaders in <pre>~/.local/share/gamescope/</pre><pre>reshade/Shaders</pre></div>
+                            <ButtonItem
+                                layout="below"
+                                onClick={() => {
+                                    setInfoExpanded(false);
+                                    localStorage.setItem("reshadeck-info-expanded", "false");
+                                }}
+                            >
+                                Hide Information
+                            </ButtonItem>
+                        </>
+                    )}
                 </PanelSectionRow>
+
             </PanelSection>
 
-            <PanelSection>
+
+
+
+            <PanelSection title="Profile">
                 <PanelSectionRow>
                     <div style={{ display: "flex", flexDirection: "row" }}>
-                        <span style={{ fontWeight: "bold", marginRight: "5px" }}>Profile:</span>
+                        <span style={{ fontWeight: "bold", marginRight: "5px" }}>Active profile:</span>
                         <span>{perGame ? currentGameName : "Default"}</span>
                     </div>
                 </PanelSectionRow>
@@ -417,6 +456,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     <ButtonItem
                         disabled={applyDisabled || !shadersEnabled || selectedShader.data === "None"}
                         bottomSeparator="none"
+                        layout="below"
                         onClick={async () => {
                             setApplyDisabled(true);
                             setTimeout(() => setApplyDisabled(false), 1000);
@@ -428,26 +468,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 <PanelSectionRow>
                     <ButtonItem
                         bottomSeparator="none"
-                        onClick={() => {
-                            showModal(
-                                <ConfirmModal
-                                    strTitle="Reset reshade directory?"
-                                    strDescription="Are you sure? This will remove all files in ~/.local/share/gamescope/reshade and replace them with the default files from this plugin."
-                                    onOK={async () => {
-                                        await serverAPI.callPluginMethod("reset_reshade_directory", {});
-                                        await initState();
-                                    }}
-                                />
-                            );
-                        }}
-                    >
-                        Reset Local Reshade Directory
-                    </ButtonItem>
-                </PanelSectionRow>
-
-                <PanelSectionRow>
-                    <ButtonItem
-                        bottomSeparator="none"
+                        layout="below"
                         onClick={() => {
                             showModal(
                                 <ConfirmModal
@@ -468,6 +489,28 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 <PanelSectionRow>
                     <ButtonItem
                         bottomSeparator="none"
+                        layout="below"
+                        onClick={() => {
+                            showModal(
+                                <ConfirmModal
+                                    strTitle="Reset reshade directory?"
+                                    strDescription="Are you sure? This will remove all files in ~/.local/share/gamescope/reshade and replace them with the default files from this plugin."
+                                    onOK={async () => {
+                                        await serverAPI.callPluginMethod("reset_reshade_directory", {});
+                                        await initState();
+                                    }}
+                                />
+                            );
+                        }}
+                    >
+                        Reset local Reshade directory
+                    </ButtonItem>
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    <ButtonItem
+                        bottomSeparator="none"
+                        layout="below"
                         onClick={async () => {
                             await serverAPI.callPluginMethod("cleanup_legacy_files", {});
                             await initState(); // Refresh list potentially
@@ -479,14 +522,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
             </PanelSection>
 
-            <PanelSection title="Information">
-                <PanelSectionRow>
-                    <div>Place any custom shaders in <pre>~/.local/share/gamescope</pre><pre>/reshade/Shaders</pre> so that the .fx files are in the root of the Shaders folder.</div>
-                </PanelSectionRow>
-                <PanelSectionRow>
-                    <div>WARNING: Shaders can lead to dropped frames and possibly even severe performance problems.</div>
-                </PanelSectionRow>
-            </PanelSection>
+
         </div>
     );
 };
