@@ -431,7 +431,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         onClick={() => {
                             showModal(
                                 <ConfirmModal
-                                    strTitle="Reset Reshade Directory?"
+                                    strTitle="Reset reshade directory?"
                                     strDescription="Are you sure? This will remove all files in ~/.local/share/gamescope/reshade and replace them with the default files from this plugin."
                                     onOK={async () => {
                                         await serverAPI.callPluginMethod("reset_reshade_directory", {});
@@ -451,7 +451,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         onClick={() => {
                             showModal(
                                 <ConfirmModal
-                                    strTitle="Reset Plugin Configuration?"
+                                    strTitle="Reset configuration?"
                                     strDescription="Are you sure? This will reset all plugin settings, including per-game profiles and shader parameters."
                                     onOK={async () => {
                                         await serverAPI.callPluginMethod("reset_configuration", {});
@@ -461,7 +461,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                             );
                         }}
                     >
-                        Reset Plugin Configuration
+                        Reset configuration
                     </ButtonItem>
                 </PanelSectionRow>
 
@@ -473,7 +473,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                             await initState(); // Refresh list potentially
                         }}
                     >
-                        Clean Legacy Temp Files
+                        Clean legacy temp files
                     </ButtonItem>
                 </PanelSectionRow>
 
