@@ -11,7 +11,9 @@ import {
     DropdownItem,
     DropdownOption,
     SingleDropdownOption,
-    SliderField
+    SliderField,
+    ConfirmModal,
+    showModal
 } from "decky-frontend-lib";
 import { VFC, useState, useEffect, useRef, useMemo } from "react";
 import { RiTvLine } from "react-icons/ri";
@@ -58,8 +60,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const paramTimeouts = useRef<{ [key: string]: number }>({});
     const [applyDisabled, setApplyDisabled] = useState(false);
     const [perGame, setPerGame] = useState<boolean>(false);
-    const [resetConfirm, setResetConfirm] = useState(false);
-    const [resetConfigConfirm, setResetConfigConfirm] = useState(false);
 
     const shaderDropdownOptions = useMemo((): DropdownOption[] => {
         const options: DropdownOption[] = [
@@ -281,7 +281,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
     return (
         <div>
-            <PanelSection title="Global Settings">
+            <PanelSection>
                 <PanelSectionRow>
                     <ToggleField
                         label="Master Switch"
@@ -299,10 +299,16 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 </PanelSectionRow>
             </PanelSection>
 
-            <PanelSection title="Profile">
+            <PanelSection>
+                <PanelSectionRow>
+                    <div style={{ display: "flex", flexDirection: "row" }}>
+                        <span style={{ fontWeight: "bold", marginRight: "5px" }}>Profile:</span>
+                        <span>{perGame ? currentGameName : "Default"}</span>
+                    </div>
+                </PanelSectionRow>
                 <PanelSectionRow>
                     <ToggleField
-                        label="Per-Game Profile"
+                        label="Per-game profile"
                         checked={perGame}
                         onChange={async (checked: boolean) => {
                             setPerGame(checked);
@@ -312,20 +318,12 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                         }}
                     />
                 </PanelSectionRow>
-
-                {perGame && (
-                    <PanelSectionRow>
-                        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center" }}>
-                            <div style={{ fontWeight: "bold" }}>{currentGameName}</div>
-                        </div>
-                    </PanelSectionRow>
-                )}
             </PanelSection>
 
             <PanelSection title="Shader">
                 <PanelSectionRow>
                     <ToggleField
-                        label="Enable Shader"
+                        label="Enable"
                         checked={shadersEnabled}
                         bottomSeparator="none"
                         onChange={async (enabled: boolean) => {
@@ -428,75 +426,43 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 </PanelSectionRow>
 
                 <PanelSectionRow>
-                    <div style={{ padding: "10px 0", color: "#ddd" }}>
-                        Warning: This will remove all files in <code style={{ userSelect: "text" }}>~/.local/share/gamescope/reshade</code> and replace them with the default files from this plugin.
-                    </div>
+                    <ButtonItem
+                        bottomSeparator="none"
+                        onClick={() => {
+                            showModal(
+                                <ConfirmModal
+                                    strTitle="Reset Reshade Directory?"
+                                    strDescription="Are you sure? This will remove all files in ~/.local/share/gamescope/reshade and replace them with the default files from this plugin."
+                                    onOK={async () => {
+                                        await serverAPI.callPluginMethod("reset_reshade_directory", {});
+                                        await initState();
+                                    }}
+                                />
+                            );
+                        }}
+                    >
+                        Reset Local Reshade Directory
+                    </ButtonItem>
                 </PanelSectionRow>
 
                 <PanelSectionRow>
-                    {!resetConfirm ? (
-                        <ButtonItem
-                            bottomSeparator="none"
-                            onClick={() => setResetConfirm(true)}
-                        >
-                            Reset Local Reshade Directory
-                        </ButtonItem>
-                    ) : (
-                        <div style={{ display: "flex", gap: "10px" }}>
-                            <ButtonItem
-                                bottomSeparator="none"
-                                onClick={async () => {
-                                    await serverAPI.callPluginMethod("reset_reshade_directory", {});
-                                    await initState();
-                                    setResetConfirm(false);
-                                }}
-                            >
-                                Confirm Reset
-                            </ButtonItem>
-                            <ButtonItem
-                                bottomSeparator="none"
-                                onClick={() => setResetConfirm(false)}
-                            >
-                                Cancel
-                            </ButtonItem>
-                        </div>
-                    )}
-                </PanelSectionRow>
-
-                <PanelSectionRow>
-                    <div style={{ padding: "10px 0", color: "#ddd" }}>
-                        Warning: This will reset all plugin settings, including per-game profiles and shader parameters.
-                    </div>
-                </PanelSectionRow>
-
-                <PanelSectionRow>
-                    {!resetConfigConfirm ? (
-                        <ButtonItem
-                            bottomSeparator="none"
-                            onClick={() => setResetConfigConfirm(true)}
-                        >
-                            Reset Plugin Configuration
-                        </ButtonItem>
-                    ) : (
-                        <div style={{ display: "flex", gap: "10px" }}>
-                            <ButtonItem
-                                bottomSeparator="none"
-                                onClick={async () => {
-                                    await serverAPI.callPluginMethod("reset_configuration", {});
-                                    await initState();
-                                    setResetConfigConfirm(false);
-                                }}
-                            >
-                                Confirm Reset
-                            </ButtonItem>
-                            <ButtonItem
-                                bottomSeparator="none"
-                                onClick={() => setResetConfigConfirm(false)}
-                            >
-                                Cancel
-                            </ButtonItem>
-                        </div>
-                    )}
+                    <ButtonItem
+                        bottomSeparator="none"
+                        onClick={() => {
+                            showModal(
+                                <ConfirmModal
+                                    strTitle="Reset Plugin Configuration?"
+                                    strDescription="Are you sure? This will reset all plugin settings, including per-game profiles and shader parameters."
+                                    onOK={async () => {
+                                        await serverAPI.callPluginMethod("reset_configuration", {});
+                                        await initState();
+                                    }}
+                                />
+                            );
+                        }}
+                    >
+                        Reset Plugin Configuration
+                    </ButtonItem>
                 </PanelSectionRow>
 
                 <PanelSectionRow>
