@@ -59,7 +59,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
     const [shaderParams, setShaderParams] = useState<ShaderParam[]>([]);
     const paramTimeouts = useRef<{ [key: string]: number }>({});
-    const [applyDisabled, setApplyDisabled] = useState(false);
     const [perGame, setPerGame] = useState<boolean>(false);
     const [infoExpanded, setInfoExpanded] = useState<boolean>(true);
 
@@ -469,18 +468,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
 
             <PanelSection title="Misc">
-                <PanelSectionRow>
-                    <ButtonItem
-                        disabled={applyDisabled || selectedShader.data === "None"}
-                        bottomSeparator="none"
-                        layout="below"
-                        onClick={async () => {
-                            setApplyDisabled(true);
-                            setTimeout(() => setApplyDisabled(false), 1000);
-                            await applyShader();
-                        }}
-                    >Force Apply</ButtonItem>
-                </PanelSectionRow>
 
                 <PanelSectionRow>
                     <ButtonItem
@@ -524,18 +511,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                     </ButtonItem>
                 </PanelSectionRow>
 
-                <PanelSectionRow>
-                    <ButtonItem
-                        bottomSeparator="none"
-                        layout="below"
-                        onClick={async () => {
-                            await serverAPI.callPluginMethod("cleanup_legacy_files", {});
-                            await initState(); // Refresh list potentially
-                        }}
-                    >
-                        Clean legacy temp files
-                    </ButtonItem>
-                </PanelSectionRow>
 
             </PanelSection>
 

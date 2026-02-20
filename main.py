@@ -424,16 +424,6 @@ class Plugin:
             Plugin._active_category = config.get("active_category", "Default")
             Plugin._params = config.get("params", {})
 
-            # --- Retrocompatibility: migrate old contrast/sharpness keys ---
-            if "contrast" in config or "sharpness" in config:
-                cas_params = Plugin._params.get("CAS.fx", {})
-                if "Contrast" not in cas_params and "contrast" in config:
-                    cas_params["Contrast"] = config["contrast"]
-                if "Sharpness" not in cas_params and "sharpness" in config:
-                    cas_params["Sharpness"] = config["sharpness"]
-                Plugin._params["CAS.fx"] = cas_params
-                Plugin.save_config()
-                logger.info("Migrated old contrast/sharpness config to new params format")
 
             if not skip_crash_check: 
                 Plugin._check_coredump_for_crash(revert_unsaved=False)
@@ -1000,34 +990,7 @@ class Plugin:
         
         return True
 
-    async def cleanup_legacy_files(self):
-        """Remove legacy temp files to clean up the shader directory."""
-        logger.info("Cleaning up legacy shader files...")
-        try:
-            # Pattern: ShaderName_Random6Chars.fx
-            # e.g. "Technicolor_Abc123.fx"
-            # This avoids deleting "Technicolor.fx" or ".reshadeck.active..."
-            legacy_pattern = re.compile(r"^.+_[A-Za-z0-9]{6}\.fx$")
-            
-            if not os.path.exists(destination_folder):
-                return True
 
-            count = 0
-            for filename in os.listdir(destination_folder):
-                if legacy_pattern.match(filename):
-                    full_path = os.path.join(destination_folder, filename)
-                    try:
-                        os.remove(full_path)
-                        count += 1
-                        logger.debug(f"Deleted legacy file: {filename}")
-                    except Exception as e:
-                        logger.error(f"Failed to delete {filename}: {e}")
-
-            logger.info(f"Legacy cleanup complete. Removed {count} files.")
-            return True
-        except Exception as e:
-            logger.error(f"Legacy cleanup failed: {e}")
-            return False
 
     # ------------------------------------------------------------------
     # Lifecycle
