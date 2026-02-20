@@ -8,6 +8,7 @@ import asyncio
 import re
 import random
 import string
+import time
 
 logger = decky_plugin.logger
 
@@ -60,6 +61,8 @@ class Plugin:
     _active_category = "Default" # Store the active package/category context
     _params = {}          # {shader_name: {param_name: value, ...}}
     _params_meta = {}     # cache: {shader_name: [param_dict, ...]}
+    _crash_check_done = False
+    _crash_on_startup_detected = False
 
 
     # ------------------------------------------------------------------
@@ -413,6 +416,18 @@ class Plugin:
                 Plugin._params["CAS.fx"] = cas_params
                 Plugin.save_config()
                 logger.info("Migrated old contrast/sharpness config to new params format")
+
+            if Plugin._master_enabled : 
+                # Check for crash on first load
+                crash_detected = Plugin._check_system_logs_for_crash()
+                
+                # Validate crash safety
+                if crash_detected:
+                    Plugin._crash_on_startup_detected = True
+                    logger.warning("Crash detected during startup. Enforcing Master Switch OFF.")
+                    Plugin._master_enabled = False
+                    # Save the safe state immediately
+                    Plugin._save_config_immediate()
 
         except Exception as e:
             logger.error(f"Failed to read config: {e}")
@@ -792,6 +807,7 @@ class Plugin:
                 decky_plugin.logger.debug(f"copytree shaders failed: {e}")
 
             # Fix permissions for shaders
+
             for root, dirs, files in os.walk(destination_folder):
                 for f in files:
                     if f.endswith(".fx") or f.endswith(".fxh") or f.endswith(".sh"):
@@ -802,6 +818,8 @@ class Plugin:
                                 os.chmod(path, 0o755)
                         except:
                             pass
+
+
 
             # 2. Textures
             if Path(textures_folder).exists():
@@ -820,6 +838,30 @@ class Plugin:
 
         except Exception as e:
             logger.error(f"Failed to install resources: {e}")
+
+    @staticmethod
+    def _check_system_logs_for_crash():
+        """Check journalctl for recent gamescope crashes."""
+        if Plugin._crash_check_done:
+            return False
+        Plugin._crash_check_done = True
+
+        try:
+            # Check for gamescope crash in last 2 minutes
+            # We look for 'gamescope' and 'dumped core' in the user journal
+            cmd = "journalctl --user --since '2 minutes ago' --output=cat | grep -iE 'gamescope.*dumped core|Process.*gamescope.*dumped core'"
+            ret = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            if ret.returncode == 0:
+                logger.error("CRASH DETECTED: Gamescope dumped core recently")
+                return True
+        except Exception as e:
+            logger.error(f"Error checking logs: {e}")
+        
+        return False
+
+    async def get_crash_detected(self):
+        return Plugin._crash_on_startup_detected
 
     async def reset_reshade_directory(self):
         """Delete the local gamescope reshade directory and reinstall default files."""

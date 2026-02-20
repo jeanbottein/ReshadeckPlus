@@ -51,6 +51,8 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const [shaderList, setShaderList] = useState<string[]>([]);
     const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
 
+    const [crashDetected, setCrashDetected] = useState<boolean>(false);
+
     // Packages
     const [packageOptions, setPackageOptions] = useState<DropdownOption[]>([]);
     const [selectedPackage, setSelectedPackage] = useState<DropdownOption>({ data: "Default", label: "Default" });
@@ -87,6 +89,12 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     };
 
     const initState = async () => {
+        // 0. CHECK FOR CRASH
+        const crashResp = await serverAPI.callPluginMethod("get_crash_detected", {});
+        if (crashResp.success) {
+            setCrashDetected(crashResp.result as boolean);
+        }
+
         // 0. Get Master Switch
         const masterResp = await serverAPI.callPluginMethod("get_master_enabled", {});
         if (masterResp.success) {
@@ -284,12 +292,22 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     return (
         <div>
             <PanelSection>
+                {crashDetected && (
+                    <PanelSectionRow>
+                        <div style={{ color: "#ff4444", fontWeight: "bold", padding: "10px", border: "1px solid #ff4444", borderRadius: "4px", margin: "10px 0" }}>
+                            WARNING: A crash was detected. The Master Switch has been disabled for safety.
+                        </div>
+                    </PanelSectionRow>
+                )}
                 <PanelSectionRow>
                     <ToggleField
                         label="Master Switch"
                         checked={masterEnabled}
                         onChange={async (enabled: boolean) => {
                             setMasterEnabled(enabled);
+                            if (enabled) {
+                                setCrashDetected(false);
+                            }
                             await serverAPI.callPluginMethod("set_master_enabled", { enabled });
                         }}
                     />
