@@ -6,8 +6,6 @@ import subprocess
 import shutil
 import asyncio
 import re
-import random
-import string
 import time
 
 logger = decky_plugin.logger
@@ -18,6 +16,9 @@ shaders_folder = decky_plugin.DECKY_PLUGIN_DIR + "/shaders"
 textures_folder = decky_plugin.DECKY_PLUGIN_DIR + "/textures"
 config_file = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR + "/config.json"
 crash_file = decky_plugin.DECKY_PLUGIN_SETTINGS_DIR + "/crash.json"
+
+CONFIG_SAVE_DELAY = 1 # Seconds to wait before saving config (UI debounce)
+CRASH_DETECTION_WINDOW = "3 minutes ago" # Time window to look back in logs for gamescope crashes
 
 # ---------------------------------------------------------------------------
 # Regex patterns for parsing .fx uniform parameters
@@ -62,7 +63,7 @@ class Plugin:
     _params = {}          # {shader_name: {param_name: value, ...}}
     _params_meta = {}     # cache: {shader_name: [param_dict, ...]}
     _crash_check_done = False
-    _crash_on_startup_detected = False
+    _crash_detected = False
 
 
     # ------------------------------------------------------------------
@@ -210,7 +211,7 @@ class Plugin:
             Plugin._params[shader] = {}
         Plugin._params[shader][name] = value
 
-        Plugin.save_config()
+        Plugin.save_config_debounced()
 
     async def reset_shader_params(self):
         """Reset all parameters of the current shader to their .fx defaults."""
@@ -418,16 +419,9 @@ class Plugin:
                 logger.info("Migrated old contrast/sharpness config to new params format")
 
             if Plugin._master_enabled : 
-                # Check for crash on first load
-                crash_detected = Plugin._check_system_logs_for_crash()
-                
-                # Validate crash safety
-                if crash_detected:
-                    Plugin._crash_on_startup_detected = True
-                    logger.warning("Crash detected during startup. Enforcing Master Switch OFF.")
-                    Plugin._master_enabled = False
-                    # Save the safe state immediately
-                    Plugin._save_config_immediate()
+                # Check for crash on every load (game switch, etc)
+                if Plugin._check_system_logs_for_crash():
+                    Plugin._crash_detected = True
 
         except Exception as e:
             logger.error(f"Failed to read config: {e}")
@@ -438,7 +432,7 @@ class Plugin:
         invoking_appid = Plugin._appid
         try:
             # Wait 10 seconds before saving
-            await asyncio.sleep(10)
+            await asyncio.sleep(CONFIG_SAVE_DELAY)
             
             # If the appid changed (game switched/closed) during the wait, abort the save
             # to prevent overwriting the new game's config or saving crash data.
@@ -456,12 +450,17 @@ class Plugin:
 
 
     @staticmethod
-    def save_config():
-        """Schedule a delayed save of the configuration."""
+    def save_config_debounced():
+        """Schedule a delayed save of the configuration (debounce for params)."""
         if Plugin._save_task:
             Plugin._save_task.cancel()
         
         Plugin._save_task = asyncio.create_task(Plugin._save_config_delayed())
+
+    @staticmethod
+    def save_config():
+        """Force configuration write to disk immediately."""
+        Plugin.flush_pending_save() 
 
     @staticmethod
     def flush_pending_save():
@@ -750,45 +749,50 @@ class Plugin:
     # Crash Loop Protection (Canary)
     # ------------------------------------------------------------------
     @staticmethod
-    def _read_crash_count():
+    def _read_crash_data():
+        """Read crash count and last crash timestamp from file."""
         try:
             if os.path.exists(crash_file):
                 with open(crash_file, "r") as f:
-                    return json.load(f).get("count", 0)
+                    data = json.load(f)
+                    return {
+                        "count": data.get("count", 0),
+                        "last_timestamp": data.get("last_timestamp", "")
+                    }
         except Exception:
             pass
-        return 0
+        return {"count": 0, "last_timestamp": ""}
 
     @staticmethod
-    def _write_crash_count(count: int):
+    def _write_crash_data(count: int, last_timestamp: str):
         try:
             with open(crash_file, "w") as f:
-                json.dump({"count": count}, f)
+                json.dump({"count": count, "last_timestamp": last_timestamp}, f)
         except Exception:
             pass
 
     @staticmethod
     def check_crash_loop():
-        count = Plugin._read_crash_count()
-        # Threshold: 2 consecutive crashes
-        if count >= 2:
-            logger.warning(f"Crash loop detected (count={count}). Disabling shaders.")
-            Plugin._enabled = False
-            Plugin._current = "None"
-            Plugin.save_config()  # Persist disabled state
-            Plugin._write_crash_count(0) # Reset count after taking action
-            return True
-        else:
-            Plugin._write_crash_count(count + 1)
-            return False
+        # This legacy check is less relevant now that we check logs directly,
+        # but we keep it as a secondary heuristic or cleanup.
+        data = Plugin._read_crash_data()
+        count = data["count"]
+        # If we just detected a crash via logs, we might have already disabled it.
+        # But this method is called on startup.
+        return False
 
     @staticmethod
     async def mark_stable():
         """Wait for 30 seconds of stable operation, then reset crash count."""
         try:
             await asyncio.sleep(30)
-            logger.info("System stable. Resetting crash count.")
-            Plugin._write_crash_count(0)
+            # We don't reset the timestamp, only the count logic if we were using it.
+            # actually, let's just leave the timestamp there so we don't re-detect old crashes.
+            # We can reset the count to 0 though.
+            data = Plugin._read_crash_data()
+            if data["count"] > 0:
+                logger.info("System stable. Resetting crash count.")
+                Plugin._write_crash_data(0, data["last_timestamp"])
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -820,7 +824,6 @@ class Plugin:
                             pass
 
 
-
             # 2. Textures
             if Path(textures_folder).exists():
                 try:
@@ -841,27 +844,57 @@ class Plugin:
 
     @staticmethod
     def _check_system_logs_for_crash():
-        """Check journalctl for recent gamescope crashes."""
-        if Plugin._crash_check_done:
+        """Check journalctl for recent gamescope crashes using timestamps."""
+        # Only check if the master switch is ON. If it's already OFF, we don't need to do anything.
+        if not Plugin._master_enabled:
             return False
-        Plugin._crash_check_done = True
 
         try:
-            # Check for gamescope crash in last 2 minutes
-            # We look for 'gamescope' and 'dumped core' in the user journal
-            cmd = "journalctl --user --since '2 minutes ago' --output=cat | grep -iE 'gamescope.*dumped core|Process.*gamescope.*dumped core'"
-            ret = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Check for gamescope crash in last CRASH_DETECTION_WINDOW
+            # output=short-iso gives us "YYYY-MM-DDTHH:MM:SS+TZ"
+            # We take the LAST line only.
+            cmd = f"journalctl --user --since '{CRASH_DETECTION_WINDOW}' --output=short-iso | grep -iE 'gamescope.*dumped core|Process.*gamescope.*dumped core' | tail -n 1"
+            ret = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             
-            if ret.returncode == 0:
-                logger.error("CRASH DETECTED: Gamescope dumped core recently")
+            line = ret.stdout.strip()
+            if not line:
+                return False
+                
+            # Example line: "2026-02-19T22:13:50-05:00 steamdeck systemd-coredump[18338]: Process 16484..."
+            # Extract timestamp (first space-separated token)
+            parts = line.split(" ")
+            if not parts:
+                return False
+            
+            crash_timestamp = parts[0]
+            
+            # Read last known crash timestamp
+            crash_data = Plugin._read_crash_data()
+            last_known_timestamp = crash_data.get("last_timestamp", "")
+            
+            # String comparison of ISO timestamps works for "is newer" check
+            # if they are in the same timezone format. journalctl output should be consistent.
+            if crash_timestamp > last_known_timestamp:
+                logger.error(f"NEW CRASH DETECTED at {crash_timestamp}. Disabling Master Switch.")
+                
+                # 1. Update crash data
+                Plugin._write_crash_data(crash_data.get("count", 0) + 1, crash_timestamp)
+                
+                # 2. Disable Master Switch
+                Plugin._master_enabled = False
+                
+                # 3. Force save config immediately
+                Plugin._save_config_immediate()
+                
                 return True
+                
         except Exception as e:
             logger.error(f"Error checking logs: {e}")
         
         return False
 
     async def get_crash_detected(self):
-        return Plugin._crash_on_startup_detected
+        return Plugin._crash_detected
 
     async def reset_reshade_directory(self):
         """Delete the local gamescope reshade directory and reinstall default files."""
