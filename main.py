@@ -331,7 +331,7 @@ class Plugin:
             logger.info("Master disabled, skipping set_shader")
             return
 
-        if Plugin._enabled:
+        if Plugin._enabled or shader_name == "None":
             staging_file = Plugin._generate_staging_shader(shader_name)
             logger.info(f"Setting and applying shader {shader_name} via {staging_file}")
             try:
@@ -664,7 +664,7 @@ class Plugin:
 
     async def set_current_game_info(self, appid: str, appname: str):
         # Recognize SteamOS menu / desktop
-        if appid == "Unknown" or appid == "" or appid == "undefined":
+        if appid == "Unknown" or appid == "" or appid == "undefined" or appid == "0":
             appid = "steamos"
             appname = "SteamOS"
         
