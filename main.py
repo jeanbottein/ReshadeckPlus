@@ -53,7 +53,6 @@ _RE_SOURCE = re.compile(r'source\s*=\s*"')
 
 
 class Plugin:
-    _enabled = False
     _current = "None"
     _appid = "Unknown"
     _appname = "Unknown"
@@ -211,7 +210,7 @@ class Plugin:
             Plugin._params[shader] = {}
         Plugin._params[shader][name] = value
 
-        Plugin.save_config_debounced()
+        Plugin.save_and_apply_debounced()
 
     async def reset_shader_params(self):
         """Reset all parameters of the current shader to their .fx defaults."""
@@ -300,68 +299,132 @@ class Plugin:
         
         return staging_filename
 
+    @staticmethod
+    def _get_current_state() -> dict:
+        """Capture the current active configuration state."""
+        return {
+            "current": Plugin._current,
+            "master_enabled": Plugin._master_enabled,
+            "params": Plugin._params.get(Plugin._current, {}).copy() if Plugin._current in Plugin._params else {}
+        }
+
+    @staticmethod
+    def _restore_state(state: dict):
+        """Restore a previously captured configuration state and save immediately."""
+        logger.info(f"Restoring previous state: {state}")
+        Plugin._current = state.get("current", "None")
+        Plugin._master_enabled = state.get("master_enabled", False)
+        
+        target_shader = state.get("current", "None")
+        if target_shader != "None":
+             if target_shader not in Plugin._params:
+                 Plugin._params[target_shader] = {}
+             Plugin._params[target_shader] = state.get("params", {}).copy()
+             
+        Plugin.save_config()
+
+    @staticmethod
+    async def _monitor_crash_task(start_time: float, previous_state: dict):
+        """Wait briefly and check for a crash. If detected, revert to previous state."""
+        try:
+            # Wait a few seconds to see if our applied change caused a crash
+            await asyncio.sleep(8)
+            
+            if Plugin._check_coredump_for_crash(revert_unsaved=False, min_timestamp=start_time):
+                logger.error("Crash detected shortly after applying shader! Reverting to previous state.")
+                
+                # Turn off master switch and mark crash detected
+                Plugin._master_enabled = False
+                Plugin._crash_detected = True
+                
+                # Restore previous safe state
+                Plugin._restore_state(previous_state)
+                
+                # Apply the restored (safe) state back to the system
+                plugin_instance = Plugin()
+                await plugin_instance.apply_shader(force="true", check_crash=False)
+                
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error in crash monitor task: {e}")
+
     # ------------------------------------------------------------------
     # Apply shader (calls set_shader.sh)
     # ------------------------------------------------------------------
-    async def apply_shader(self, force: str = "true"):
+    async def apply_shader(self, force: str = "true", check_crash: bool = False, previous_state: dict = None):
         if not Plugin._master_enabled:
             logger.info("Master disabled, skipping apply_shader")
             return
 
-        if Plugin._enabled:
-            shader = Plugin._current
-            # Generate the fixed staging file
+        shader = Plugin._current
+        staging_file = shader
+        if shader != "None":
             staging_file = Plugin._generate_staging_shader(shader)
             
-            # Plugin.save_config() # Delayed save to catch crashes
-            Plugin.save_config_debounced()
-            logger.info(f"Applying shader {shader} via {staging_file}")
-            try:
-                env = os.environ.copy()
-                env["LD_LIBRARY_PATH"] = ""
-                # Pass the STAGING file to the script (.reshadeck.fx)
-                proc = await asyncio.create_subprocess_exec(
-                    shaders_folder + "/set_shader.sh", staging_file, destination_folder, force,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=env
-                )
-                stdout, stderr = await proc.communicate()
-                logger.info(f"Apply shader result: {proc.returncode}")
-                if stdout: logger.debug(f"stdout: {stdout.decode()}")
-                if stderr: logger.error(f"stderr: {stderr.decode()}")
-            except Exception:
-                logger.exception("Apply shader")
+        start_time = time.time()
+        
+        logger.info(f"Applying shader {shader} via {staging_file}")
+        try:
+            env = os.environ.copy()
+            env["LD_LIBRARY_PATH"] = ""
+            # Pass the STAGING file to the script (.reshadeck.fx)
+            proc = await asyncio.create_subprocess_exec(
+                shaders_folder + "/set_shader.sh", staging_file, destination_folder, force,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env
+            )
+            stdout, stderr = await proc.communicate()
+            logger.info(f"Apply shader result: {proc.returncode}")
+            if stdout: logger.debug(f"stdout: {stdout.decode()}")
+            if stderr: logger.error(f"stderr: {stderr.decode()}")
+            
+            # If requested, monitor for crash after applying
+            if check_crash and previous_state is not None:
+                 asyncio.create_task(Plugin._monitor_crash_task(start_time, previous_state))
+                 
+        except Exception:
+            logger.exception("Apply shader")
 
     async def set_shader(self, shader_name: str):
+        previous_state = Plugin._get_current_state()
+        
         Plugin._current = shader_name
-        # Plugin.save_config() # Delayed save
-        Plugin.save_config_debounced()
+        Plugin.save_config()
         
         if not Plugin._master_enabled:
             logger.info("Master disabled, skipping set_shader")
             return
 
-        if Plugin._enabled or shader_name == "None":
+        staging_file = shader_name
+        if shader_name != "None":
             staging_file = Plugin._generate_staging_shader(shader_name)
-            logger.info(f"Setting and applying shader {shader_name} via {staging_file}")
-            try:
-                env = os.environ.copy()
-                env["LD_LIBRARY_PATH"] = ""
-                proc = await asyncio.create_subprocess_exec(
-                    shaders_folder + "/set_shader.sh", staging_file, destination_folder,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=env
-                )
-                stdout, stderr = await proc.communicate()
-                decky_plugin.logger.info(f"Set shader result: {proc.returncode}")
-                if stdout: decky_plugin.logger.debug(f"stdout: {stdout.decode()}")
-                if stderr: decky_plugin.logger.error(f"stderr: {stderr.decode()}")
-            except Exception:
-                decky_plugin.logger.exception("Set shader")
+        logger.info(f"Setting and applying shader {shader_name} via {staging_file}")
+            
+        start_time = time.time()
+        try:
+            env = os.environ.copy()
+            env["LD_LIBRARY_PATH"] = ""
+            proc = await asyncio.create_subprocess_exec(
+                shaders_folder + "/set_shader.sh", staging_file, destination_folder,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env
+            )
+            stdout, stderr = await proc.communicate()
+            decky_plugin.logger.info(f"Set shader result: {proc.returncode}")
+            if stdout: decky_plugin.logger.debug(f"stdout: {stdout.decode()}")
+            if stderr: decky_plugin.logger.error(f"stderr: {stderr.decode()}")
+            
+            asyncio.create_task(Plugin._monitor_crash_task(start_time, previous_state))
+            
+        except Exception:
+            decky_plugin.logger.exception("Set shader")
 
     async def toggle_shader(self, shader_name):
+        previous_state = Plugin._get_current_state()
+        
         # Allow disabling shader (None) even if master is disabled, but block enabling
         if not Plugin._master_enabled and shader_name != "None":
              logger.info("Master disabled, skipping toggle_shader")
@@ -372,6 +435,8 @@ class Plugin:
             staging_file = Plugin._generate_staging_shader(shader_name)
             
         logger.info(f"Toggling shader {shader_name}")
+        start_time = time.time()
+        
         try:
             env = os.environ.copy()
             env["LD_LIBRARY_PATH"] = ""
@@ -385,6 +450,10 @@ class Plugin:
             decky_plugin.logger.info(f"Toggle shader result: {proc.returncode}")
             if stdout: decky_plugin.logger.debug(f"stdout: {stdout.decode()}")
             if stderr: decky_plugin.logger.error(f"stderr: {stderr.decode()}")
+            
+            if shader_name != "None":
+                asyncio.create_task(Plugin._monitor_crash_task(start_time, previous_state))
+            
         except Exception:
             decky_plugin.logger.exception("Toggle shader")
 
@@ -419,7 +488,6 @@ class Plugin:
                 config = data.get("_global", {})
 
             Plugin._master_enabled = data.get("master_enabled", True)
-            Plugin._enabled = config.get("enabled", False)
             Plugin._current = config.get("current", "None")
             Plugin._active_category = config.get("active_category", "Default")
             Plugin._params = config.get("params", {})
@@ -432,46 +500,35 @@ class Plugin:
             logger.error(f"Failed to read config: {e}")
 
     @staticmethod
-    async def _save_config_delayed():
-        # Capture the appid that invoked the save
-        invoking_appid = Plugin._appid
-        start_time = time.time()
+    async def _save_and_apply_delayed():
         try:
-            # Wait 10 seconds before saving
-            await asyncio.sleep(CONFIG_SAVE_DELAY)
+            # Wait 1 second before saving and applying (debounce sliders)
+            await asyncio.sleep(1)
             
-            # If the appid changed (game switched/closed) during the wait, abort the save
-            # to prevent overwriting the new game's config or saving crash data.
-            if Plugin._appid != invoking_appid:
-                decky_plugin.logger.info("AppID changed during save delay. Aborting save.")
-                Plugin._save_task = None
-                return
-
-            # Check for crash before saving.
-            # If a crash is detected, _check_coredump_for_crash will:
-            # 1. Revert config (discarding THIS pending save)
-            # 2. Disable Master Switch
-            # 3. Save the reverted+disabled state immediately
-            if Plugin._check_coredump_for_crash(revert_unsaved=True, min_timestamp=start_time):
-                 logger.info("Crash detected during save delay. Aborting save of unsafe config.")
-                 Plugin._save_task = None
-                 return
-
-            Plugin._save_config_immediate()
+            # Save immediately
+            Plugin.save_config()
+            
+            # Apply with crash check. We need a "previous_state" but it's hard to
+            # perfectly track the pre-slider state if rapidly changing.
+            # Assuming any crash defaults to restoring the *current* saved safe state
+            # would require more complex state versioning. For simplicity, just checking
+            # and if crashing, maybe we disable.
+            # Because this is debounce, we won't do full reversion here to avoid complex state jumping.
+            # The general crash monitor works better on explicit set_shader/master switch calls.
+            plugin_instance = Plugin()
+            await plugin_instance.apply_shader(force="false", check_crash=False)
+            
             Plugin._save_task = None
         except asyncio.CancelledError:
-            # Task was cancelled (e.g. by a new save request or game switch)
             pass
 
-
-
     @staticmethod
-    def save_config_debounced():
-        """Schedule a delayed save of the configuration (debounce for params)."""
+    def save_and_apply_debounced():
+        """Schedule a delayed save and apply (debounce for slider params)."""
         if Plugin._save_task:
             Plugin._save_task.cancel()
         
-        Plugin._save_task = asyncio.create_task(Plugin._save_config_delayed())
+        Plugin._save_task = asyncio.create_task(Plugin._save_and_apply_delayed())
 
     @staticmethod
     def save_config():
@@ -511,8 +568,6 @@ class Plugin:
 
             entry = {
                 "appname": Plugin._appname if Plugin._per_game else "Global",
-                "enabled": Plugin._enabled,
-                "enabled": Plugin._enabled,
                 "current": target_shader,
                 "active_category": Plugin._active_category,
                 "params": saved_params,
@@ -605,18 +660,23 @@ class Plugin:
         return Plugin._master_enabled
 
     async def set_master_enabled(self, enabled: bool):
+        previous_state = Plugin._get_current_state()
+        
         Plugin._master_enabled = enabled
+        
+        if enabled:
+            # Ignore any crashes that occurred before the master switch was flipped on
+            crash_data = Plugin._read_crash_data()
+            Plugin._write_crash_data(crash_data.get("count", 0), str(time.time()))
+            Plugin._crash_detected = False
+
         Plugin._save_config_immediate()
         if not enabled:
             # Force clear
             await Plugin.toggle_shader(self, "None")
         else:
             # Re-apply if actively enabled
-            if Plugin._enabled:
-                await Plugin.apply_shader(self)
-
-    async def get_shader_enabled(self):
-        return Plugin._enabled
+            await Plugin.apply_shader(self, force="true", check_crash=True, previous_state=previous_state)
 
     async def get_current_shader(self):
         return Plugin._current
@@ -631,12 +691,6 @@ class Plugin:
 
         # Flush any pending save before switching modes to ensure consistency
         Plugin.flush_pending_save()
-
-        prevEnabled = Plugin._enabled
-        prevCurrent = Plugin._current
-        prevParams = {}
-        if prevCurrent in Plugin._params:
-             prevParams = Plugin._params[prevCurrent].copy()
 
         Plugin._per_game = enabled
         if enabled:
@@ -714,7 +768,6 @@ class Plugin:
             Plugin._save_task.cancel()
             Plugin._save_task = None
 
-        prevEnabled = Plugin._enabled
         prevCurrent = Plugin._current
         # Capture parameters of the active shader to detect changes
         prevParams = {}
@@ -730,14 +783,9 @@ class Plugin:
         if Plugin._current in Plugin._params:
              currentParams = Plugin._params[Plugin._current]
 
-        if Plugin._enabled and not prevEnabled:
-            await Plugin.apply_shader(self)
-        elif prevEnabled and not Plugin._enabled:
-            await Plugin.toggle_shader(self, "None")
-        elif Plugin._enabled:
-            # If shader changed OR parameters changed, re-apply
-            if (Plugin._current != prevCurrent) or (currentParams != prevParams):
-                await Plugin.apply_shader(self, force="false")
+        # If shader changed OR parameters changed, re-apply
+        if (Plugin._current != prevCurrent) or (currentParams != prevParams):
+            await Plugin.apply_shader(self, force="false", check_crash=True, previous_state=previous_state)
 
     async def set_shader_enabled(self, isEnabled):
         Plugin._enabled = isEnabled
@@ -909,11 +957,16 @@ class Plugin:
             if latest_timestamp <= last_known_timestamp:
                 return False
 
-
+            # Check if crash is older than 5 minutes
+            if time.time() - latest_timestamp > 300:
+                # Still record it so we don't keep evaluating this old crash
+                Plugin._write_crash_data(crash_data.get("count", 0), str(latest_timestamp))
+                return False
 
             logger.error(f"NEW CRASH DETECTED. File: {latest_file.name}, Timestamp: {latest_timestamp}. Disabling Master Switch.")
                 
             if revert_unsaved:
+                # Kept for compatibility if used elsewhere, but typically unused now since we save instantly.
                 logger.info("Reverting to last saved config before disabling Master Switch.")
                 try:
                     # Load config from disk, skipping crash check to avoid recursion
@@ -972,7 +1025,6 @@ class Plugin:
             return False
 
         # Reset internal state
-        Plugin._enabled = False
         Plugin._current = "None"
         Plugin._per_game = False
         Plugin._active_category = "Default"
@@ -1005,7 +1057,7 @@ class Plugin:
             decky_plugin.logger.info(str(await Plugin.get_shader_list(self)))
             Plugin.load_config()
             # Plugin.check_crash_loop()
-            if Plugin._enabled:
+            if Plugin._current != "None":
                 await asyncio.sleep(5)
                 await Plugin.apply_shader(self)
             

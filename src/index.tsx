@@ -411,7 +411,6 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                                 setShaderList([]);
                             }
                             setSelectedShader(baseShader);
-                            await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: false });
                             await serverAPI.callPluginMethod("set_shader", { shader_name: "None" });
                             setShaderParams([]);
                         }}
@@ -431,14 +430,12 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                             const idx = opt.data as number;
                             if (idx === -1) {
                                 setSelectedShader(baseShader);
-                                await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: false });
                                 await serverAPI.callPluginMethod("set_shader", { shader_name: "None" });
                                 setShaderParams([]);
                             } else {
                                 const path = shaderList[idx];
                                 const label = opt.label as string;
                                 setSelectedShader({ data: path, label });
-                                await serverAPI.callPluginMethod("set_shader_enabled", { isEnabled: true });
                                 await serverAPI.callPluginMethod("set_shader", { shader_name: path });
                                 await fetchShaderParams();
                             }
