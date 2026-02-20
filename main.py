@@ -689,6 +689,12 @@ class Plugin:
         """Toggle per-game mode. When switching ON, copy global config to
         per-game. When switching OFF, the game will use global config."""
 
+        previous_state = Plugin._get_current_state()
+        prevCurrent = Plugin._current
+        prevParams = {}
+        if prevCurrent in Plugin._params:
+             prevParams = Plugin._params[prevCurrent].copy()
+
         # Flush any pending save before switching modes to ensure consistency
         Plugin.flush_pending_save()
 
@@ -723,13 +729,8 @@ class Plugin:
         if Plugin._current in Plugin._params:
              currentParams = Plugin._params[Plugin._current]
 
-        if Plugin._enabled and not prevEnabled:
-            await Plugin.apply_shader(self)
-        elif prevEnabled and not Plugin._enabled:
-            await Plugin.toggle_shader(self, "None")
-        elif Plugin._enabled:
-             if (Plugin._current != prevCurrent) or (currentParams != prevParams):
-                 await Plugin.apply_shader(self, force="false")
+        if (Plugin._current != prevCurrent) or (currentParams != prevParams):
+             await Plugin.apply_shader(self, check_crash=True, previous_state=previous_state)
 
     async def get_game_info(self):
         """Return current game info for the frontend."""
@@ -768,6 +769,7 @@ class Plugin:
             Plugin._save_task.cancel()
             Plugin._save_task = None
 
+        previous_state = Plugin._get_current_state()
         prevCurrent = Plugin._current
         # Capture parameters of the active shader to detect changes
         prevParams = {}
@@ -787,9 +789,6 @@ class Plugin:
         if (Plugin._current != prevCurrent) or (currentParams != prevParams):
             await Plugin.apply_shader(self, check_crash=True, previous_state=previous_state)
 
-    async def set_shader_enabled(self, isEnabled):
-        Plugin._enabled = isEnabled
-        Plugin.save_config()
 
     async def get_current_effect(self):
         try:
