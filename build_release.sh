@@ -20,7 +20,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 AUTHOR="jeanbottein"
-ZIP_NAME="${AUTHOR}-${PLUGIN_NAME,,}-${VERSION}.zip"
+ZIP_NAME="${PLUGIN_NAME,,}-${VERSION}.zip"
 
 echo "Starting build process for ${ZIP_NAME}..."
 
