@@ -52,6 +52,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     const [currentGameName, setCurrentGameName] = useState<string>("Unknown");
 
     const [crashDetected, setCrashDetected] = useState<boolean>(false);
+    const [oldVersionExists, setOldVersionExists] = useState<boolean>(false);
 
     // Packages
     const [packageOptions, setPackageOptions] = useState<DropdownOption[]>([]);
@@ -88,6 +89,17 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     };
 
     const initState = async () => {
+        const oldResp = await serverAPI.callPluginMethod("get_old_version_exists", {});
+        let oldExists = false;
+        if (oldResp.success) {
+            oldExists = oldResp.result as boolean;
+            setOldVersionExists(oldExists);
+        }
+
+        if (oldExists) {
+            await serverAPI.callPluginMethod("set_master_enabled", { enabled: false });
+        }
+
         // 0. CHECK FOR CRASH
         const crashResp = await serverAPI.callPluginMethod("get_crash_detected", {});
         if (crashResp.success) {
@@ -184,16 +196,28 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 await initState();
             }
 
-            // 2. Poll for crash status
+            // 2. Poll for crash status and old version
             const crashResp = await serverAPI.callPluginMethod("get_crash_detected", {});
             if (crashResp.success) {
                 setCrashDetected(crashResp.result as boolean);
             }
 
-            // 3. Poll for master switch status (incase it was disabled by backend due to crash)
+            const oldResp = await serverAPI.callPluginMethod("get_old_version_exists", {});
+            let oldExists = false;
+            if (oldResp.success) {
+                oldExists = oldResp.result as boolean;
+                setOldVersionExists(oldExists);
+            }
+
+            // 3. Poll for master switch status (incase it was disabled by backend)
             const masterResp = await serverAPI.callPluginMethod("get_master_enabled", {});
             if (masterResp.success) {
-                setMasterEnabled(masterResp.result as boolean);
+                let masterVal = masterResp.result as boolean;
+                if (oldExists && masterVal) {
+                    await serverAPI.callPluginMethod("set_master_enabled", { enabled: false });
+                    masterVal = false;
+                }
+                setMasterEnabled(masterVal);
             }
         }, 5000);
         return () => clearInterval(interval);
@@ -304,7 +328,14 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     return (
         <div>
             <PanelSection>
-                {crashDetected && (
+                {oldVersionExists && (
+                    <PanelSectionRow>
+                        <div style={{ color: "#ffaa00", fontWeight: "bold", padding: "10px", border: "1px solid #ffaa00", borderRadius: "4px", margin: "10px 0" }}>
+                            WARNING: Conflicting older version of Reshadeck detected. The Master Switch is disabled. Please remove the old plugin to enable it.
+                        </div>
+                    </PanelSectionRow>
+                )}
+                {crashDetected && !oldVersionExists && (
                     <PanelSectionRow>
                         <div style={{ color: "#ff4444", fontWeight: "bold", padding: "10px", border: "1px solid #ff4444", borderRadius: "4px", margin: "10px 0" }}>
                             WARNING: A crash was detected. The Master Switch has been disabled for safety.
@@ -314,8 +345,10 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
                 <PanelSectionRow>
                     <ToggleField
                         label="Master Switch"
-                        checked={masterEnabled}
+                        checked={masterEnabled && !oldVersionExists}
+                        disabled={oldVersionExists}
                         onChange={async (enabled: boolean) => {
+                            if (oldVersionExists) return;
                             setMasterEnabled(enabled);
                             if (enabled) {
                                 setCrashDetected(false);

@@ -2,8 +2,8 @@
 # deploy.sh — Build and copy plugin files to the Decky homebrew directory
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST="$HOME/homebrew/plugins/Reshadeck"
-PLUGIN_NAME="Reshadeck"
+DEST="$HOME/homebrew/plugins/ReshadeckPlus"
+PLUGIN_NAME="ReshadeckPlus"
 
 # Ensure we are in the project root
 cd "$SRC"

@@ -3,8 +3,8 @@
 # Ensure we are in the project root first
 cd "$(dirname "$0")"
 
-# Configuration — PLUGIN_NAME matches the install directory (must stay "Reshadeck")
-PLUGIN_NAME="Reshadeck"
+# Configuration — PLUGIN_NAME matches the install directory (must stay "reshadeck_plus")
+PLUGIN_NAME="ReshadeckPlus"
 # Read version from package.json using node or jq. 
 # Using node as it's guaranteed to be present for a node project.
 if command -v jq &> /dev/null; then

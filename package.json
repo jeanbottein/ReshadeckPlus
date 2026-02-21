@@ -1,5 +1,5 @@
 {
-  "name": "reshadeck",
+  "name": "reshadeck_plus",
   "version": "0.0.0",
   "description": "A plugin for loading reshade plugins on steam deck",
   "scripts": {

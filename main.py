@@ -409,6 +409,12 @@ class Plugin:
             # 1. Load config
             Plugin._load_config_state(Plugin._current_appid)
             
+            # 1.5. Force disable if old version exists
+            old_dir = decky_plugin.DECKY_USER_HOME + "/homebrew/plugins/Reshadeck"
+            if os.path.isdir(old_dir):
+                Plugin._master_switch = False
+                Plugin._save_config_immediate()
+            
             # 2. Startup Canary Check
             if Plugin._master_switch and Plugin._active_shader != "None":
                 crash_data = Plugin._read_crash_data()
@@ -449,6 +455,10 @@ class Plugin:
     # Event B: on_master_switch_changed(is_enabled)
     async def set_master_enabled(self, enabled: bool):
         logger.info(f"Event B: on_master_switch_changed({enabled})")
+        
+        old_dir = decky_plugin.DECKY_USER_HOME + "/homebrew/plugins/Reshadeck"
+        if enabled and os.path.isdir(old_dir):
+            enabled = False
         
         # 1. Cancel active crash detection
         Plugin._cancel_crash_detection()
@@ -665,6 +675,10 @@ class Plugin:
 
     async def get_crash_detected(self):
         return Plugin._crash_detected
+
+    async def get_old_version_exists(self):
+        old_dir = decky_plugin.DECKY_USER_HOME + "/homebrew/plugins/Reshadeck"
+        return os.path.isdir(old_dir)
 
     async def get_shader_list(self, category: str = "Default"):
         temp_pattern = re.compile(r"^.+_[A-Za-z0-9]{6}\.fx$")
