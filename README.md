@@ -2,7 +2,7 @@
 
 This is a fork of a fork based on the work of [mspeedo/Reshadeck](https://github.com/mspeedo/Reshadeck) and originally [safijari/Reshadeck](https://github.com/safijari/Reshadeck).
 
-It is hosted here: [https://github.com/jeanbottein/Reshadeck](https://github.com/jeanbottein/Reshadeck).
+It is hosted here: [https://github.com/jeanbottein/ReshadeckPlus](https://github.com/jeanbottein/ReshadeckPlus).
 
 Reshade Shader Loader for Decky Plugin Loader for the handheld Steam Game Loader. It ships with a small curated set of shaders.
 More shaders can be added at the `~/.local/share/gamescope/reshade/Shaders` folder such that the `.fx` files are in the 
@@ -12,7 +12,7 @@ root of the `Shaders` folder. Then you can pick and apply the shader using the p
 
 # Installation
 
-1.  Download the plugin ZIP file from the [Releases](https://github.com/jeanbottein/Reshadeck/releases/latest).
+1.  Download the plugin ZIP file from the [Releases](https://github.com/jeanbottein/ReshadeckPlus/releases/latest).
 2.  Open Quick Access Menu (three dots button)
 3.  Navigate to Decky → Settings (gear icon)
 4.  Enable Developer Mode if not already enabled

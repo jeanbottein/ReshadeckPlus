@@ -330,8 +330,8 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
             <PanelSection>
                 {oldVersionExists && (
                     <PanelSectionRow>
-                        <div style={{ color: "#ffaa00", fontWeight: "bold", padding: "10px", border: "1px solid #ffaa00", borderRadius: "4px", margin: "10px 0" }}>
-                            WARNING: Conflicting older version of Reshadeck detected. The Master Switch is disabled. Please remove the old plugin to enable it.
+                        <div style={{ color: "#ff4444", fontWeight: "bold", padding: "10px", border: "1px solid #ff4444", borderRadius: "4px", margin: "10px 0" }}>
+                            WARNING: Conflicting with Reshadeck detected. The Master Switch is disabled. Remove Reshadeck to enable it.
                         </div>
                     </PanelSectionRow>
                 )}
