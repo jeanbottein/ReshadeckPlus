@@ -61,10 +61,11 @@ deploy-steamdeck: ## Deploy plugin build to steamdeck
 		--exclude='.pnpm-store/' \
 		--exclude='src/' \
 		--exclude='*.log' \
-		--exclude='.gitignore' . \
-		--exclude='.idea' . \
-		--exclude='.env' . \
-		--exclude='Makefile' . \
+		--exclude='__pycache__/' \
+		--exclude='.gitignore' \
+		--exclude='.idea' \
+		--exclude='.env' \
+		--exclude='Makefile' \
  		./ $(DECK_USER)@$(DECK_HOST):$(DECK_HOME)/homebrew/plugins/$(PLUGIN_FOLDER)/
 	@ssh $(DECK_USER)@$(DECK_HOST) -p $(DECK_PORT) -i $(DECK_KEY) \
  		'chmod -v 755 $(DECK_HOME)/homebrew/plugins/'

@@ -41,14 +41,16 @@ cp -R -L \
     shaders \
     textures \
     main.py \
+    utils \
     plugin.json \
     package.json \
     LICENSE \
     README.md \
     "$STAGING_DIR"
 
-# Remove source maps if present
+# Remove source maps and python caches if present
 rm -f "$STAGING_DIR/dist/"*.map
+find "$STAGING_DIR" -type d -name "__pycache__" -exec rm -rf {} +
 
 # 4. Deploy using rsync
 echo "Syncing files to $DEST..."
