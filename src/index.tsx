@@ -241,7 +241,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         paramTimeouts.current[paramName] = window.setTimeout(async () => {
             await serverAPI.callPluginMethod("set_shader_param", { name: paramName, value });
             await applyShader();
-        }, 500);
+        }, 150);
     };
 
     // --- Render a single parameter control ---

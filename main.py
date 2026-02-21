@@ -565,35 +565,19 @@ class Plugin:
             Plugin._shader_parameters[shader] = {}
         Plugin._shader_parameters[shader][name] = value
         
-        # 2,3. Cancel and Schedule apply_debounced
-        if Plugin._debounce_task:
-            Plugin._debounce_task.cancel()
-        Plugin._debounce_task = asyncio.create_task(Plugin._apply_debounced())
+        # Do not apply here; frontend will call apply_shader manually.
 
-    @staticmethod
-    async def _apply_debounced():
-        try:
-            await asyncio.sleep(1.0)
-            logger.info("Executing debounced parameter apply")
+    async def apply_shader(self):
+        logger.info("Event G: apply_shader (Manual from UI)")
+        
+        Plugin._cancel_crash_detection()
+        Plugin._save_config_immediate()
+        
+        if not Plugin._master_switch:
+            return
             
-            # 1. Cancel crash detection
-            Plugin._cancel_crash_detection()
-            
-            # 2. Save config immediately
-            Plugin._save_config_immediate()
-            
-            # 3. If master == false, halt
-            if not Plugin._master_switch:
-                return
-                
-            # 4. Trigger Crash Detection
-            Plugin._trigger_crash_detection()
-            
-            # 5. Execute apply_shader
-            await Plugin._apply_shader_internal(Plugin._active_shader)
-            
-        except asyncio.CancelledError:
-            pass
+        Plugin._trigger_crash_detection()
+        await Plugin._apply_shader_internal(Plugin._active_shader)
 
     # ------------------------------------------------------------------
     # Utility getters/setters for UI (Event D: on_ui_opened implicit syncing)
