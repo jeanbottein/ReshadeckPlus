@@ -30,6 +30,27 @@ _RE_UI_ITEMS = re.compile(r'ui_items\s*=\s*"((?:[^"\\]|\\0)*)"')
 
 _RE_SOURCE = re.compile(r'source\s*=\s*"')
 
+def apply_shader_transformations(text: str) -> str:
+    """Transforms upstream .fx files to be compatible by injecting UI annotations."""
+    # Remove the ReShadeUI include as it's not needed/causes errors if missing
+    text = re.sub(r'#include "ReShadeUI\.fxh"', "", text)
+    
+    # Transform different uniform types
+    # 1. Sliders (FLOAT/INT) -> ui_type = "drag"
+    text = re.sub(r'<\s*__UNIFORM_SLIDER_(?:FLOAT|INT)[1-3]', r'<\n    ui_type = "drag";', text)
+    
+    # 2. Colors -> ui_type = "color"
+    text = re.sub(r'<\s*__UNIFORM_COLOR_FLOAT[1-3]', r'< ui_type = "color";', text)
+    
+    # 3. Combos -> ui_type = "combo"
+    text = re.sub(r'<\s*__UNIFORM_COMBO_INT1', r'<\n    ui_type = "combo";', text)
+    
+    # 4. Inputs/Drags (BOOL/Drag Float) -> ui_type = "drag"
+    text = re.sub(r'<\s*__UNIFORM_INPUT_BOOL1', r'<\n    ui_type = "drag";', text)
+    text = re.sub(r'<\s*__UNIFORM_DRAG_FLOAT[1-2]', r'<\n    ui_type = "drag";', text)
+    
+    return text
+
 def parse_shader_params(shader_name: str) -> list[dict]:
     """Parse all user-tuneable uniform parameters from a .fx file."""
     source_file = Path(shaders_folder) / shader_name
@@ -40,8 +61,10 @@ def parse_shader_params(shader_name: str) -> list[dict]:
         return []
 
     text = fx_file.read_text(encoding="utf-8", errors="replace")
+    
+    text = apply_shader_transformations(text)
+        
     params: list[dict] = []
-
     # --- annotated uniforms ---
     for m in _RE_ANNOTATED.finditer(text):
         utype, uname, annotation, raw_default = (
@@ -156,6 +179,7 @@ def generate_staging_shader(shader_name: str) -> str:
         return shader_name
 
     text = source_file.read_text(encoding="utf-8", errors="replace")
+    text = apply_shader_transformations(text)
     
     params = State.shader_parameters.get(shader_name, {})
     patched_text = apply_params_to_content(text, params)
