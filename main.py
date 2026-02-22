@@ -113,6 +113,10 @@ class Plugin:
             
         if appname in ["Loading...", "Unknown"]:
             return
+
+        # Ensure we don't reload config if app hasn't actually changed
+        if State.current_appid == appid and State.appname == appname:
+            return
             
         logger.info(f"Event C: on_active_app_changed({appid})")
 

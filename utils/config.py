@@ -31,6 +31,7 @@ def save_config_immediate():
 
         entry = {
             "appname": State.appname if State.per_game_mode else "Global",
+            "active_category": State.active_category,
             "shaders": shaders,
         }
         if State.per_game_mode:
@@ -71,17 +72,19 @@ def load_config_state(appid: str):
 
         State.master_switch = data.get("master_enabled", True)
         
+        State.active_category = config.get("active_category", "Default")
+        
         shaders = config.get("shaders", [])
         if shaders and isinstance(shaders, list) and len(shaders) > 0:
             first_pass = shaders[0]
             State.active_shader = first_pass.get("shader", "None")
-            State.active_category = first_pass.get("category", "Default")
+            if "category" in first_pass:
+                State.active_category = first_pass.get("category", State.active_category)
             # Convert to dictionary keyed by shader name as expected by the rest of the application
             State.shader_parameters = {State.active_shader: first_pass.get("parameters", {})} if State.active_shader != "None" else {}
         else:
             State.active_shader = "None"
-            State.active_category = "Default"
             State.shader_parameters = {}
-        
+            
     except Exception as e:
         logger.error(f"Failed to read config: {e}")
