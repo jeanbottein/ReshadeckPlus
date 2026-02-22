@@ -1,3 +1,6 @@
 [submodule "external/SweetFX"]
 	path = external/SweetFX
 	url = https://github.com/CeeJayDK/SweetFX
+[submodule "external/Ptho-FX"]
+	path = external/Ptho-FX
+	url = https://github.com/PthoEastCoast/Ptho-FX
