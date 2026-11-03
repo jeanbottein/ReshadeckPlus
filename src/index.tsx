@@ -188,11 +188,16 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     // --- Poll for game changes and re-init state ---
     useEffect(() => {
         let lastAppId = `${Router.MainRunningApp?.appid || "Unknown"}`;
+        let lastProfile = "";
         const interval = setInterval(async () => {
-            // 1. Check game change
+            // 1. Check game change (Steam app, or backend profile for a launcher's game)
             const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
-            if (appid !== lastAppId) {
-                lastAppId = appid;
+            const infoResp = await serverAPI.callPluginMethod("get_game_info", {});
+            const profile = infoResp.success ? `${(infoResp.result as any).appid}` : lastProfile;
+            const changed = appid !== lastAppId || (lastProfile !== "" && profile !== lastProfile);
+            lastAppId = appid;
+            lastProfile = profile;
+            if (changed) {
                 await initState();
             }
 

@@ -64,7 +64,11 @@ def load_config_state(appid: str):
         with open(config_file, "r") as f:
             data = json.load(f)
 
-        app_config = data.get(appid, {})
+        app_config = data.get(appid)
+        if app_config is None and "/" in appid:
+            # A launcher's game starts from the launcher's profile
+            app_config = data.get(appid.split("/", 1)[0], {})
+        app_config = app_config or {}
         is_per_game = app_config.get("per_game", False)
         State.per_game_mode = is_per_game
 

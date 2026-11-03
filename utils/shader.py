@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from utils.constants import logger, shaders_folder, destination_folder
 from utils.state import State
+from utils.sliders import fit_range, parse_limit
 
 # ---------------------------------------------------------------------------
 # Regex patterns for parsing .fx uniform parameters
@@ -20,9 +21,9 @@ _RE_PLAIN = re.compile(
 
 _RE_UI = {
     "ui_type":  re.compile(r'ui_type\s*=\s*"(\w+)"'),
-    "ui_min":   re.compile(r'ui_min\s*=\s*([-+]?\d+\.?\d*)'),
-    "ui_max":   re.compile(r'ui_max\s*=\s*([-+]?\d+\.?\d*)'),
-    "ui_step":  re.compile(r'ui_step\s*=\s*([-+]?\d+\.?\d*)'),
+    "ui_min":   re.compile(r'ui_min\s*=\s*([^;]+);'),
+    "ui_max":   re.compile(r'ui_max\s*=\s*([^;]+);'),
+    "ui_step":  re.compile(r'ui_step\s*=\s*([^;]+);'),
     "ui_label": re.compile(r'ui_label\s*=\s*"([^"]*)"'),
 }
 
@@ -90,13 +91,17 @@ def parse_shader_params(shader_name: str) -> list[dict]:
         elif utype == "bool":
             p["default"] = raw_default.lower() == "true"
         elif utype == "int":
-            p["default"] = int(raw_default)
+            p["default"] = int(float(raw_default))
         else:
             p["default"] = raw_default
 
         for k in ("ui_min", "ui_max", "ui_step"):
             if k in p:
-                p[k] = float(p[k])
+                value = parse_limit(p.pop(k))
+                if value is not None:
+                    p[k] = value
+        if utype in ("float", "int"):
+            fit_range(p)
 
         if "ui_label" not in p:
             base = shader_name.replace(".fx", "")
@@ -121,13 +126,11 @@ def parse_shader_params(shader_name: str) -> list[dict]:
         p = {
             "name": uname,
             "type": utype,
-            "default": float(raw_default) if utype == "float" else int(raw_default),
+            "default": float(raw_default) if utype == "float" else int(float(raw_default)),
             "ui_type": "drag",
-            "ui_min": 0.0,
-            "ui_max": 2.0,
-            "ui_step": 0.01,
             "ui_label": f"{uname} [{base}]",
         }
+        fit_range(p)
         params.append(p)
 
     return params

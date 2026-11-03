@@ -4,7 +4,9 @@ class State:
     shader_parameters = {}  # {shader_name: {param_name: value, ...}}
     crash_detected = False
     per_game_mode = False
-    current_appid = "Unknown"
+    current_appid = "Unknown"  # profile key: "<appid>" or "<appid>/<game>"
+    steam_appid = "Unknown"
+    steam_appname = "Unknown"
     
     # State related to packages and caching
     appname = "Unknown"
@@ -14,3 +16,4 @@ class State:
     # Task Management
     active_crash_monitor_task = None
     debounce_task = None
+    focus_watch_task = None

@@ -12,6 +12,7 @@ This is a fork of a fork based on the work of [mspeedo/Reshadeck](https://github
 - On-the-fly adapter for shaders to maximize compatibility
 - Crash detection and circuit breaker with a master switch in case of problematic shaders
 - Works outside SteamOS (tested on Bazzite): bundles the standard `ReShade.fxh` / `ReShadeUI.fxh` headers, which only SteamOS ships with gamescope
+- Games started from a launcher (Cartouche, Lutris, XIVLauncher…) get their own per-game profile: the plugin follows gamescope's focused window instead of only the Steam app (a new game profile starts from the launcher's profile)
 
 It is hosted here: [https://github.com/jeanbottein/ReshadeckPlus](https://github.com/jeanbottein/ReshadeckPlus).
 
