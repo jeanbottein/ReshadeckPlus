@@ -11,6 +11,7 @@ This is a fork of a fork based on the work of [mspeedo/Reshadeck](https://github
 - Grouped by package
 - On-the-fly adapter for shaders to maximize compatibility
 - Crash detection and circuit breaker with a master switch in case of problematic shaders
+- Works outside SteamOS (tested on Bazzite): bundles the standard `ReShade.fxh` / `ReShadeUI.fxh` headers, which only SteamOS ships with gamescope
 
 It is hosted here: [https://github.com/jeanbottein/ReshadeckPlus](https://github.com/jeanbottein/ReshadeckPlus).
 
