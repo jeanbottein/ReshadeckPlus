@@ -1,29 +1,18 @@
-"""Resolve which game is really on screen when Steam only knows the launcher.
+"""Name the profile after the game a launcher started, using gamescope's focused window.
 
-Steam reports the app it started (e.g. a non-Steam shortcut to a launcher such as
-Cartouche, Lutris, or XIVLauncher). Games started *by* that launcher inherit its
-Steam AppId, so every game would share the launcher's profile.
-
-Gamescope publishes the focused window and, for each focusable window, the triple
-(window, appid, pid) on the root window of display :0. If the focused window's process
-descends from another process that owns a window of the same app (the launcher),
-we key the profile as "<appid>/<game>" instead of "<appid>".
+Games started by a launcher share its Steam AppId; gamescope still tells which process owns the focused window.
 """
 import asyncio
 import os
 import re
 
-from utils.constants import logger
-
-# Processes that only wrap the real program: skip them when naming the game.
 WRAPPERS = {"sh", "bash", "dash", "zsh", "env", "nohup", "setsid", "reaper",
             "steam-launch-wrapper", "gamemoderun", "mangohud", "strace", "timeout"}
-# Arguments that look like files but are not the game/ROM.
 NON_ROM_EXT = {".ini", ".cfg", ".conf", ".json", ".yml", ".yaml", ".xml", ".txt", ".log", ".toml"}
 STRIP_EXT = (".appimage", ".exe", ".x86_64", ".x86", ".sh", ".bin", ".elf")
+PROTON_STUBS = {"steam.exe", "start.exe", "explorer.exe"}
 
-# pids seen owning a window per Steam appid (a launcher may hide its window while the game runs)
-_window_pids: dict = {}
+_launcher_pids: dict = {}  # appid -> pids seen owning a window (launchers may hide theirs)
 
 
 def _read_cmdline(pid: int) -> list:
@@ -37,8 +26,7 @@ def _read_cmdline(pid: int) -> list:
 def _read_ppid(pid: int) -> int:
     try:
         with open(f"/proc/{pid}/stat") as f:
-            # comm may contain spaces/parentheses: fields after the last ')'
-            return int(f.read().rsplit(")", 1)[1].split()[1])
+            return int(f.read().rsplit(")", 1)[1].split()[1])  # comm may contain ")"
     except (OSError, IndexError, ValueError):
         return 0
 
@@ -56,105 +44,103 @@ def _strip_ext(name: str) -> str:
 
 
 def _sanitize(name: str) -> str:
-    name = re.sub(r"[^A-Za-z0-9 ._+-]", "_", name).strip(" ._")
-    return name[:64] or "unknown"
+    return re.sub(r"[^A-Za-z0-9 ._+-]", "_", name).strip(" ._")[:64] or "unknown"
 
 
 def _program_name(argv: list) -> str:
-    """Readable program name from argv (handles flatpak run <app-id>)."""
-    exe = _basename(argv[0]) if argv else ""
+    exe = _basename(argv[0])
     if exe == "flatpak":
-        for a in argv[1:]:
-            if not a.startswith("-") and a != "run" and "." in a:
-                return a.split(".")[-1]
+        app_id = next((a for a in argv[1:] if "." in a and not a.startswith("-")), None)
+        if app_id:
+            return app_id.split(".")[-1]
     return _strip_ext(exe)
 
 
 def _rom_name(argv: list):
-    """Last argument that is an existing file (not a config file): the ROM/content for emulators."""
-    for a in reversed(argv[1:]):
-        if a.startswith("-") or not os.path.isabs(a) or a == argv[0]:
-            continue
-        if os.path.isfile(a) and os.path.splitext(a)[1].lower() not in NON_ROM_EXT:
-            return _strip_ext(os.path.splitext(_basename(a))[0]) or None
+    for arg in reversed(argv[1:]):
+        if os.path.isabs(arg) and os.path.isfile(arg) and os.path.splitext(arg)[1].lower() not in NON_ROM_EXT:
+            return os.path.splitext(os.path.basename(arg))[0]
+    return None
+
+
+def _windows_exe(chain: list):
+    for pid in reversed(chain):
+        for arg in _read_cmdline(pid):
+            name = _basename(arg)
+            if name.lower().endswith(".exe") and name.lower() not in PROTON_STUBS:
+                return _strip_ext(name)
     return None
 
 
 def _game_name(chain: list) -> str:
     """chain: pids from the launcher's child down to the focused process."""
-    # Proton/Wine: a Windows .exe anywhere below the launcher names the game best.
-    for pid in reversed(chain):
-        for a in _read_cmdline(pid):
-            if a.lower().endswith(".exe") and _basename(a).lower() not in ("proton", "wine64", "wine", "wineserver"):
-                return _strip_ext(_basename(a))
-    # Otherwise the first process below the launcher that isn't a shell/wrapper.
+    exe = _windows_exe(chain)
+    if exe:
+        return exe
     for pid in chain:
         argv = _read_cmdline(pid)
         if argv and _basename(argv[0]) not in WRAPPERS:
-            name = _program_name(argv)
             rom = _rom_name(argv)
-            return f"{name} - {rom}" if rom else name
-    return _program_name(_read_cmdline(chain[-1]))
+            return f"{_program_name(argv)} - {rom}" if rom else _program_name(argv)
+    return "unknown"
 
 
 async def _gamescope_focus():
-    """Return (focused_window, [(window, appid, pid), ...]) from gamescope, or None."""
+    """(focused window, [(window, appid, pid), ...]) from gamescope, or None."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "xprop", "-root", "GAMESCOPE_FOCUSED_WINDOW", "GAMESCOPE_FOCUSABLE_WINDOWS",
-            env={"DISPLAY": ":0"}, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            env={**os.environ, "DISPLAY": ":0"},
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    except OSError:
+        return None
+    try:
         out, _ = await asyncio.wait_for(proc.communicate(), 2)
-    except Exception:
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
         return None
-    focused, triples = None, []
+    atoms = {}
     for line in out.decode(errors="replace").splitlines():
-        if "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        nums = [int(x) for x in re.findall(r"\d+", value)]
-        if name.startswith("GAMESCOPE_FOCUSED_WINDOW") and nums:
-            focused = nums[0]
-        elif name.startswith("GAMESCOPE_FOCUSABLE_WINDOWS"):
-            triples = [tuple(nums[i:i + 3]) for i in range(0, len(nums) - 2, 3)]
-    if focused is None:
+        name, _, value = line.partition("=")
+        atoms[name.split("(")[0].strip()] = [int(n) for n in re.findall(r"\d+", value)]
+    focused = atoms.get("GAMESCOPE_FOCUSED_WINDOW")
+    if not focused:
         return None
-    return focused, triples
+    nums = atoms.get("GAMESCOPE_FOCUSABLE_WINDOWS", [])
+    return focused[0], [tuple(nums[i:i + 3]) for i in range(0, len(nums) - 2, 3)]
 
 
-async def resolve_target(steam_appid: str, steam_appname: str):
-    """Return (profile_key, display_name) for what is actually on screen."""
+def _remember_launchers(app: int, windows: list) -> set:
+    pids = _launcher_pids.setdefault(app, set())
+    pids.update(pid for _, appid, pid in windows if appid == app and pid > 0)
+    pids.intersection_update(p for p in list(pids) if os.path.exists(f"/proc/{p}"))
+    return pids
+
+
+def _chain_below_launcher(pid: int, launchers: set):
+    """Pids from the launcher's child down to pid, or None if pid wasn't started by a launcher."""
+    chain = []
+    while pid > 1 and len(chain) < 64:
+        chain.insert(0, pid)
+        pid = _read_ppid(pid)
+        if pid in launchers:
+            return chain
+    return None
+
+
+async def resolve_profile(steam_appid: str, steam_appname: str):
+    """(profile key, display name) for what is on screen: "<appid>/<game>" when a launcher started it."""
     default = (steam_appid, steam_appname)
-    if not steam_appid.isdigit():
-        return default
-    focus = await _gamescope_focus()
+    focus = await _gamescope_focus() if steam_appid.isdigit() else None
     if not focus:
         return default
-    focused, triples = focus
+    focused, windows = focus
     app = int(steam_appid)
-    seen = _window_pids.setdefault(app, set())
-    seen.update(pid for _, a, pid in triples if a == app and pid > 0)
-    for pid in list(seen):
-        if not os.path.exists(f"/proc/{pid}"):
-            seen.discard(pid)
-
-    hit = next(((w, a, pid) for w, a, pid in triples if w == focused), None)
-    if not hit or hit[1] != app or hit[2] <= 0:
-        return default  # Steam UI or another app has focus
-
-    # Walk up from the focused process; stop at the first ancestor owning a window of this app.
-    chain, pid = [], hit[2]
-    while pid > 1 and len(chain) < 64:
-        parent = _read_ppid(pid)
-        chain.insert(0, pid)
-        if parent in seen:
-            return f"{steam_appid}/{_sanitize(_game_name(chain))}", None
-        pid = parent
-    return default  # the focused window belongs to the launched app itself
-
-
-async def resolve_with_name(steam_appid: str, steam_appname: str):
-    key, name = await resolve_target(steam_appid, steam_appname)
-    if name is None:
-        game = key.split("/", 1)[1]
-        name = f"{game} ({steam_appname})"
-    return key, name
+    launchers = _remember_launchers(app, windows)
+    pid = next((p for w, a, p in windows if w == focused and a == app), 0)
+    chain = _chain_below_launcher(pid, launchers) if pid > 0 else None
+    if not chain:
+        return default
+    game = _sanitize(_game_name(chain))
+    return f"{steam_appid}/{game}", f"{game} ({steam_appname})"

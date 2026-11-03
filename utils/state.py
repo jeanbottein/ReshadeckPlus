@@ -4,8 +4,8 @@ class State:
     shader_parameters = {}  # {shader_name: {param_name: value, ...}}
     crash_detected = False
     per_game_mode = False
-    current_appid = "Unknown"  # profile key: Steam appid, or "<appid>/<game>" for games started by a launcher
-    steam_appid = "Unknown"    # what Steam reports as running
+    current_appid = "Unknown"  # profile key: "<appid>" or "<appid>/<game>"
+    steam_appid = "Unknown"
     steam_appname = "Unknown"
     
     # State related to packages and caching

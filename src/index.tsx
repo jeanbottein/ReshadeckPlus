@@ -188,18 +188,17 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     // --- Poll for game changes and re-init state ---
     useEffect(() => {
         let lastAppId = `${Router.MainRunningApp?.appid || "Unknown"}`;
-        let lastProfile: string | undefined;
+        let lastProfile = "";
         const interval = setInterval(async () => {
-            // 1. Check game change (Steam app, or the backend's profile when a launcher started a game)
+            // 1. Check game change (Steam app, or backend profile for a launcher's game)
             const appid = `${Router.MainRunningApp?.appid || "Unknown"}`;
             const infoResp = await serverAPI.callPluginMethod("get_game_info", {});
-            const profile = infoResp.success ? `${(infoResp.result as any).appid}` : undefined;
-            if (appid !== lastAppId || (lastProfile !== undefined && profile !== lastProfile)) {
-                lastAppId = appid;
-                lastProfile = profile;
+            const profile = infoResp.success ? `${(infoResp.result as any).appid}` : lastProfile;
+            const changed = appid !== lastAppId || (lastProfile !== "" && profile !== lastProfile);
+            lastAppId = appid;
+            lastProfile = profile;
+            if (changed) {
                 await initState();
-            } else {
-                lastProfile = profile;
             }
 
             // 2. Poll for crash status and old version

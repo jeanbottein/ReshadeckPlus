@@ -17,9 +17,10 @@ from utils.state import State
 from utils.config import save_config_immediate, load_config_state
 from utils.shader import parse_shader_params, apply_shader_internal
 from utils.crash import trigger_crash_detection, cancel_crash_detection, read_crash_data, write_crash_data
-from utils.focus import resolve_with_name
+from utils.focus import resolve_profile
 
 FOCUS_POLL_SECONDS = 2
+_target_lock = asyncio.Lock()
 
 class Plugin:
 
@@ -32,7 +33,7 @@ class Plugin:
         try:
             Plugin._install_resources()
             logger.info("Plugin Initialized (Event A: on_plugin_load)")
-            State.focus_watch_task = asyncio.get_event_loop().create_task(Plugin._focus_watch())
+            State.focus_watch_task = asyncio.create_task(Plugin._focus_watch())
             
             # 1. Load config
             load_config_state(State.current_appid)
@@ -127,11 +128,14 @@ class Plugin:
         State.steam_appname = appname
         await Plugin._refresh_target()
 
-    # Event C': the focused window changed inside a running app (game started from a launcher)
     @staticmethod
     async def _refresh_target():
-        appid, appname = await resolve_with_name(State.steam_appid, State.steam_appname)
+        async with _target_lock:
+            appid, appname = await resolve_profile(State.steam_appid, State.steam_appname)
+            await Plugin._switch_profile(appid, appname)
 
+    @staticmethod
+    async def _switch_profile(appid: str, appname: str):
         # Ensure we don't reload config if app hasn't actually changed
         if State.current_appid == appid and State.appname == appname:
             return
@@ -161,14 +165,10 @@ class Plugin:
 
     @staticmethod
     async def _focus_watch():
-        """Follow gamescope focus so games started by a launcher get their own profile."""
         while True:
             await asyncio.sleep(FOCUS_POLL_SECONDS)
             try:
-                if State.steam_appid.isdigit():
-                    await Plugin._refresh_target()
-            except asyncio.CancelledError:
-                raise
+                await Plugin._refresh_target()
             except Exception:
                 logger.exception("focus watch")
 

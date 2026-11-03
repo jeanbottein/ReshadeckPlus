@@ -66,7 +66,7 @@ def load_config_state(appid: str):
 
         app_config = data.get(appid)
         if app_config is None and "/" in appid:
-            # A game started by a launcher starts from the launcher's profile until it gets its own.
+            # A launcher's game starts from the launcher's profile
             app_config = data.get(appid.split("/", 1)[0], {})
         app_config = app_config or {}
         is_per_game = app_config.get("per_game", False)
