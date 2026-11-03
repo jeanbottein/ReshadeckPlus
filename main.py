@@ -17,6 +17,9 @@ from utils.state import State
 from utils.config import save_config_immediate, load_config_state
 from utils.shader import parse_shader_params, apply_shader_internal
 from utils.crash import trigger_crash_detection, cancel_crash_detection, read_crash_data, write_crash_data
+from utils.focus import resolve_with_name
+
+FOCUS_POLL_SECONDS = 2
 
 class Plugin:
 
@@ -29,6 +32,7 @@ class Plugin:
         try:
             Plugin._install_resources()
             logger.info("Plugin Initialized (Event A: on_plugin_load)")
+            State.focus_watch_task = asyncio.get_event_loop().create_task(Plugin._focus_watch())
             
             # 1. Load config
             load_config_state(State.current_appid)
@@ -76,6 +80,11 @@ class Plugin:
         except Exception:
             logger.exception("main")
 
+    async def _unload(self):
+        if State.focus_watch_task:
+            State.focus_watch_task.cancel()
+            State.focus_watch_task = None
+
     # Event B: on_master_switch_changed(is_enabled)
     async def set_master_enabled(self, enabled: bool):
         logger.info(f"Event B: on_master_switch_changed({enabled})")
@@ -114,6 +123,15 @@ class Plugin:
         if appname in ["Loading...", "Unknown"]:
             return
 
+        State.steam_appid = appid
+        State.steam_appname = appname
+        await Plugin._refresh_target()
+
+    # Event C': the focused window changed inside a running app (game started from a launcher)
+    @staticmethod
+    async def _refresh_target():
+        appid, appname = await resolve_with_name(State.steam_appid, State.steam_appname)
+
         # Ensure we don't reload config if app hasn't actually changed
         if State.current_appid == appid and State.appname == appname:
             return
@@ -140,6 +158,19 @@ class Plugin:
         
         # 7. Execute apply_shader
         await apply_shader_internal(State.active_shader)
+
+    @staticmethod
+    async def _focus_watch():
+        """Follow gamescope focus so games started by a launcher get their own profile."""
+        while True:
+            await asyncio.sleep(FOCUS_POLL_SECONDS)
+            try:
+                if State.steam_appid.isdigit():
+                    await Plugin._refresh_target()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("focus watch")
 
     # Event E: on_shader_changed(new_shader)
     async def set_shader(self, shader_name: str):
