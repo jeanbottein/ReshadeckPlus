@@ -90,7 +90,7 @@ async def _gamescope_focus():
     try:
         proc = await asyncio.create_subprocess_exec(
             "xprop", "-root", "GAMESCOPE_FOCUSED_WINDOW", "GAMESCOPE_FOCUSABLE_WINDOWS",
-            env={**os.environ, "DISPLAY": ":0"},
+            env={**os.environ, "DISPLAY": ":0", "LD_LIBRARY_PATH": ""},
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
     except OSError:
         return None
